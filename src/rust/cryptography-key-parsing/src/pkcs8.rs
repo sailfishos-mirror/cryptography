@@ -381,9 +381,9 @@ pub fn parse_encrypted_private_key(
     parse_private_key(&plaintext)
 }
 
-pub fn serialize_private_key(
-    pkey: &openssl::pkey::PKeyRef<openssl::pkey::Private>,
-) -> crate::KeySerializationResult<Vec<u8>> {
+pub fn serialize_private_key(key: &ParsedPrivateKey) -> crate::KeySerializationResult<Vec<u8>> {
+    let ParsedPrivateKey::Pkey(pkey) = key;
+
     let p_bytes;
     let q_bytes;
     let g_bytes;
@@ -518,10 +518,10 @@ pub fn serialize_private_key(
 const KDF_ITERATION_COUNT: u64 = 2048;
 
 pub fn serialize_encrypted_private_key(
-    pkey: &openssl::pkey::PKeyRef<openssl::pkey::Private>,
+    key: &ParsedPrivateKey,
     password: &[u8],
 ) -> crate::KeySerializationResult<Vec<u8>> {
-    let plaintext_der = serialize_private_key(pkey)?;
+    let plaintext_der = serialize_private_key(key)?;
 
     let e = pbe::EncryptionAlgorithm::PBESv2SHA256AndAES256CBC;
 
@@ -544,13 +544,15 @@ pub fn serialize_encrypted_private_key(
 #[cfg(test)]
 mod tests {
     use super::serialize_private_key;
+    use crate::ParsedPrivateKey;
 
     #[cfg(not(CRYPTOGRAPHY_IS_BORINGSSL))]
     #[test]
     #[should_panic(expected = "Unknown key type")]
     fn test_serialize_private_key_unknown_key_type() {
         let pkey = openssl::pkey::PKey::hmac(&[0u8; 16]).unwrap();
+        let parsed = ParsedPrivateKey::Pkey(pkey);
         // Expected to panic
-        _ = serialize_private_key(&pkey);
+        _ = serialize_private_key(&parsed);
     }
 }
