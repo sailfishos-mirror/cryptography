@@ -1834,9 +1834,7 @@ class TestRSACertificate:
             cert.verify_directly_issued_by(ca2)
 
     @pytest.mark.supported(
-        only_if=lambda backend: (
-            backend.ed25519_supported() and backend.x25519_supported()
-        ),
+        only_if=lambda backend: backend.x25519_supported(),
         skip_message="Requires OpenSSL with Ed25519 and X25519 support",
     )
     def test_verify_directly_issued_by_unsupported_key_type(self, backend):
@@ -3361,10 +3359,6 @@ class TestCertificateBuilder:
         with pytest.raises(TypeError):
             builder.sign(private_key, algorithm, backend)
 
-    @pytest.mark.supported(
-        only_if=lambda backend: backend.ed25519_supported(),
-        skip_message="Requires OpenSSL with Ed25519 support",
-    )
     def test_sign_with_unsupported_hash_ed25519(self, backend):
         private_key = ed25519.Ed25519PrivateKey.generate()
         builder = (
@@ -3724,10 +3718,6 @@ class TestCertificateBuilder:
         assert cert.issuer == issuer
         assert cert.subject == subject
 
-    @pytest.mark.supported(
-        only_if=lambda backend: backend.ed25519_supported(),
-        skip_message="Requires OpenSSL with Ed25519 support",
-    )
     def test_build_cert_with_ed25519(self, backend):
         issuer_private_key = ed25519.Ed25519PrivateKey.generate()
         subject_private_key = ed25519.Ed25519PrivateKey.generate()
@@ -3787,10 +3777,6 @@ class TestCertificateBuilder:
             x509.DNSName("cryptography.io"),
         ]
 
-    @pytest.mark.supported(
-        only_if=lambda backend: backend.ed25519_supported(),
-        skip_message="Requires OpenSSL with Ed25519 support",
-    )
     def test_build_cert_with_public_ed25519_rsa_sig(
         self, rsa_key_2048: rsa.RSAPrivateKey, backend
     ):
@@ -4617,10 +4603,6 @@ class TestCertificateSigningRequestBuilder:
                 backend,
             )
 
-    @pytest.mark.supported(
-        only_if=lambda backend: backend.ed25519_supported(),
-        skip_message="Requires OpenSSL with Ed25519 support",
-    )
     def test_request_with_unsupported_hash_ed25519(self, backend):
         private_key = ed25519.Ed25519PrivateKey.generate()
         builder = x509.CertificateSigningRequestBuilder().subject_name(
@@ -4928,10 +4910,6 @@ class TestCertificateSigningRequestBuilder:
                 ecdsa_deterministic=True,
             )
 
-    @pytest.mark.supported(
-        only_if=lambda backend: backend.ed25519_supported(),
-        skip_message="Requires OpenSSL with Ed25519 support",
-    )
     def test_build_ca_request_with_ed25519(self, backend):
         private_key = ed25519.Ed25519PrivateKey.generate()
 
@@ -6555,10 +6533,6 @@ class TestName:
         )
 
 
-@pytest.mark.supported(
-    only_if=lambda backend: backend.ed25519_supported(),
-    skip_message="Requires OpenSSL with Ed25519 support",
-)
 class TestEd25519Certificate:
     def test_load_pem_cert(self, backend):
         cert = _load_cert(

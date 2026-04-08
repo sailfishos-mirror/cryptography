@@ -1788,10 +1788,6 @@ class TestSubjectKeyIdentifierExtension:
         ski = x509.SubjectKeyIdentifier.from_public_key(cert.public_key())
         assert ext.value == ski
 
-    @pytest.mark.supported(
-        only_if=lambda backend: backend.ed25519_supported(),
-        skip_message="Requires OpenSSL with Ed25519 support",
-    )
     def test_from_ed25519_public_key(self, backend):
         cert = _load_cert(
             os.path.join("x509", "ed25519", "root-ed25519.pem"),
