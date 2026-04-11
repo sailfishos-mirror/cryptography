@@ -50,11 +50,12 @@ def load_pyproject_toml() -> dict:
 @nox.session(name="tests-nocoverage")
 @nox.session(name="tests-rust-debug")
 def tests(session: nox.Session) -> None:
-    extras = "test"
+    extras = []
+    groups = ["test"]
     if session.name == "tests-ssh":
-        extras += ",ssh"
+        extras.append("ssh")
     if session.name == "tests-randomorder":
-        extras += ",test-randomorder"
+        groups = ["test-randomorder"]
 
     prof_location = (
         pathlib.Path(".") / ".rust-cov" / str(uuid.uuid4())
@@ -69,15 +70,20 @@ def tests(session: nox.Session) -> None:
             }
         )
 
+    install_spec = f".[{','.join(extras)}]"
     install(session, "-e", "./vectors")
     if session.name == "tests-rust-debug":
         install(
             session,
             "--config-settings-package=cryptography:build-args=--profile=dev",
-            f".[{extras}]",
+            install_spec,
         )
     else:
-        install(session, f".[{extras}]")
+        install(session, install_spec)
+
+    # TODO: update to use `pip install --group` after py3.8 is removed
+    pyproject_data = load_pyproject_toml()
+    install(session, *nox.project.dependency_groups(pyproject_data, *groups))
 
     session.run("uv", "pip", "list")
 
@@ -114,7 +120,15 @@ def tests(session: nox.Session) -> None:
 
 @nox.session
 def docs(session: nox.Session) -> None:
-    install(session, ".[docs,docstest,sdist,ssh]")
+    # TODO: update to use `pip install --group` after py3.8 is removed
+    pyproject_data = load_pyproject_toml()
+    install(session, ".[ssh]")
+    install(
+        session,
+        *nox.project.dependency_groups(
+            pyproject_data, "docs", "docstest", "sdist"
+        ),
+    )
 
     temp_dir = session.create_tmp()
     session.run(
@@ -176,7 +190,11 @@ def docs(session: nox.Session) -> None:
 
 @nox.session(name="docs-linkcheck")
 def docs_linkcheck(session: nox.Session) -> None:
-    install(session, ".[docs]")
+    # TODO: update to use `pip install --group` after py3.8 is removed
+    pyproject_data = load_pyproject_toml()
+    install(
+        session, ".", *nox.project.dependency_groups(pyproject_data, "docs")
+    )
 
     session.run(
         "sphinx-build", "-W", "-b", "linkcheck", "docs", "docs/_build/html"
@@ -187,15 +205,16 @@ def docs_linkcheck(session: nox.Session) -> None:
 def flake(session: nox.Session) -> None:
     # TODO: Ideally there'd be a pip flag to install just our dependencies,
     # but not install us.
+    # TODO: update to use `pip install --group` after py3.8 is removed
     pyproject_data = load_pyproject_toml()
     install(session, "-e", "vectors/")
     install(
         session,
         *pyproject_data["build-system"]["requires"],
-        *pyproject_data["project"]["optional-dependencies"]["pep8test"],
-        *pyproject_data["project"]["optional-dependencies"]["test"],
         *pyproject_data["project"]["optional-dependencies"]["ssh"],
-        *pyproject_data["project"]["optional-dependencies"]["nox"],
+        *nox.project.dependency_groups(
+            pyproject_data, "pep8test", "test", "nox"
+        ),
     )
 
     session.run("ruff", "check")
@@ -277,10 +296,10 @@ def local(session: nox.Session):
     install(
         session,
         *pyproject_data["build-system"]["requires"],
-        *pyproject_data["project"]["optional-dependencies"]["pep8test"],
-        *pyproject_data["project"]["optional-dependencies"]["test"],
         *pyproject_data["project"]["optional-dependencies"]["ssh"],
-        *pyproject_data["project"]["optional-dependencies"]["nox"],
+        *nox.project.dependency_groups(
+            pyproject_data, "pep8test", "test", "nox"
+        ),
         verbose=False,
     )
 
