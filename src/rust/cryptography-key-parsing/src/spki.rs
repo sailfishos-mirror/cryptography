@@ -22,7 +22,8 @@ pub fn parse_public_key(data: &[u8]) -> KeyParsingResult<ParsedPublicKey> {
                 &mut bn_ctx,
             )
             .map_err(|_| KeyParsingError::InvalidKey)?;
-            let ec_key = openssl::ec::EcKey::from_public_key(&group, &ec_point)?;
+            let ec_key = openssl::ec::EcKey::from_public_key(&group, &ec_point)
+                .map_err(|_| KeyParsingError::InvalidKey)?;
             let pkey = openssl::pkey::PKey::from_ec_key(ec_key)?;
             Ok(ParsedPublicKey::Pkey(pkey))
         }
