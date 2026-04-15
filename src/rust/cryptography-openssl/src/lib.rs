@@ -11,6 +11,8 @@ pub mod fips;
 pub mod hmac;
 #[cfg(any(CRYPTOGRAPHY_IS_BORINGSSL, CRYPTOGRAPHY_IS_AWSLC))]
 pub mod mldsa;
+#[cfg(CRYPTOGRAPHY_IS_AWSLC)]
+pub mod mlkem;
 #[cfg(any(
     CRYPTOGRAPHY_IS_BORINGSSL,
     CRYPTOGRAPHY_IS_LIBRESSL,

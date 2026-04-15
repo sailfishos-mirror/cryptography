@@ -245,6 +245,9 @@ mod _rust {
         #[cfg(any(CRYPTOGRAPHY_IS_BORINGSSL, CRYPTOGRAPHY_IS_AWSLC))]
         #[pymodule_export]
         use crate::backend::mldsa::mldsa;
+        #[cfg(CRYPTOGRAPHY_IS_AWSLC)]
+        #[pymodule_export]
+        use crate::backend::mlkem::mlkem;
         #[pymodule_export]
         use crate::backend::poly1305::poly1305;
         #[pymodule_export]

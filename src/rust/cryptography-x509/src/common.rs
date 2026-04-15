@@ -65,6 +65,9 @@ pub enum AlgorithmParameters<'a> {
     #[defined_by(oid::X448_OID)]
     X448,
 
+    #[defined_by(oid::ML_KEM_768_OID)]
+    MlKem768,
+
     // These encodings are only used in SPKI AlgorithmIdentifiers.
     #[defined_by(oid::EC_OID)]
     Ec(EcParameters<'a>),
