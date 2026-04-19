@@ -41,6 +41,10 @@ mod kem_params {
     pub const P521_ID: u16 = 0x0012;
     pub const P521_NSECRET: usize = 64;
     pub const P521_NENC: usize = 133;
+
+    pub const MLKEM768_ID: u16 = 0x0041;
+    pub const MLKEM768_NSECRET: usize = 32;
+    pub const MLKEM768_NENC: usize = 1088;
 }
 
 mod kdf_params {
@@ -84,6 +88,7 @@ pub(crate) enum KEM {
     P256,
     P384,
     P521,
+    MLKEM768,
 }
 
 impl KEM {
@@ -147,6 +152,7 @@ impl KEM {
             KEM::P256 => kem_params::P256_ID,
             KEM::P384 => kem_params::P384_ID,
             KEM::P521 => kem_params::P521_ID,
+            KEM::MLKEM768 => kem_params::MLKEM768_ID,
         }
     }
 
@@ -156,6 +162,7 @@ impl KEM {
             KEM::P256 => kem_params::P256_NSECRET,
             KEM::P384 => kem_params::P384_NSECRET,
             KEM::P521 => kem_params::P521_NSECRET,
+            KEM::MLKEM768 => kem_params::MLKEM768_NSECRET,
         }
     }
 
@@ -165,6 +172,7 @@ impl KEM {
             KEM::P256 => kem_params::P256_NENC,
             KEM::P384 => kem_params::P384_NENC,
             KEM::P521 => kem_params::P521_NENC,
+            KEM::MLKEM768 => kem_params::MLKEM768_NENC,
         }
     }
 
@@ -204,6 +212,15 @@ impl KEM {
                 "KEM.P521",
                 "secp521r1",
             )?,
+            KEM::MLKEM768 => {
+                if !key.is_instance(&types::MLKEM768_PUBLIC_KEY.get(py)?)? {
+                    return Err(CryptographyError::from(
+                        pyo3::exceptions::PyTypeError::new_err(
+                            "Expected MLKEM768PublicKey for KEM.MLKEM768",
+                        ),
+                    ));
+                }
+            }
         }
         Ok(())
     }
@@ -244,8 +261,162 @@ impl KEM {
                 "KEM.P521",
                 "secp521r1",
             )?,
+            KEM::MLKEM768 => {
+                if !key.is_instance(&types::MLKEM768_PRIVATE_KEY.get(py)?)? {
+                    return Err(CryptographyError::from(
+                        pyo3::exceptions::PyTypeError::new_err(
+                            "Expected MLKEM768PrivateKey for KEM.MLKEM768",
+                        ),
+                    ));
+                }
+            }
         }
         Ok(())
+    }
+
+    fn encap<'p>(
+        &self,
+        py: pyo3::Python<'p>,
+        pk_r: &pyo3::Bound<'p, pyo3::PyAny>,
+        kem_suite_id: &[u8; 5],
+    ) -> CryptographyResult<(
+        pyo3::Bound<'p, pyo3::types::PyBytes>,
+        pyo3::Bound<'p, pyo3::types::PyBytes>,
+    )> {
+        match self {
+            KEM::MLKEM768 => {
+                let result = pk_r.call_method0(pyo3::intern!(py, "encapsulate"))?;
+                Ok(result.extract()?)
+            }
+            KEM::X25519 | KEM::P256 | KEM::P384 | KEM::P521 => {
+                self.dhkem_encap(py, pk_r, kem_suite_id)
+            }
+        }
+    }
+
+    fn decap<'p>(
+        &self,
+        py: pyo3::Python<'p>,
+        enc: &[u8],
+        sk_r: &pyo3::Bound<'p, pyo3::PyAny>,
+        kem_suite_id: &[u8; 5],
+    ) -> CryptographyResult<pyo3::Bound<'p, pyo3::types::PyBytes>> {
+        match self {
+            KEM::MLKEM768 => {
+                let enc_bytes = pyo3::types::PyBytes::new(py, enc);
+                Ok(sk_r
+                    .call_method1(pyo3::intern!(py, "decapsulate"), (enc_bytes,))?
+                    .extract()?)
+            }
+            KEM::X25519 | KEM::P256 | KEM::P384 | KEM::P521 => {
+                self.dhkem_decap(py, enc, sk_r, kem_suite_id)
+            }
+        }
+    }
+
+    fn dhkem_encap<'p>(
+        &self,
+        py: pyo3::Python<'p>,
+        pk_r: &pyo3::Bound<'p, pyo3::PyAny>,
+        kem_suite_id: &[u8; 5],
+    ) -> CryptographyResult<(
+        pyo3::Bound<'p, pyo3::types::PyBytes>,
+        pyo3::Bound<'p, pyo3::types::PyBytes>,
+    )> {
+        let sk_e = self.generate_key(py)?;
+        let pk_e = sk_e.call_method0(pyo3::intern!(py, "public_key"))?;
+        let pk_e_bytes = self.serialize_public_key(py, &pk_e)?;
+        let pk_r_bytes = self.serialize_public_key(py, pk_r)?;
+
+        let dh_result = self.exchange(py, &sk_e, pk_r)?;
+        let dh = dh_result.extract::<&[u8]>()?;
+
+        let mut kem_context =
+            Vec::with_capacity(pk_e_bytes.as_bytes().len() + pk_r_bytes.as_bytes().len());
+        kem_context.extend_from_slice(pk_e_bytes.as_bytes());
+        kem_context.extend_from_slice(pk_r_bytes.as_bytes());
+
+        let shared_secret = self.extract_and_expand(py, dh, &kem_context, kem_suite_id)?;
+        Ok((shared_secret, pk_e_bytes))
+    }
+
+    fn dhkem_decap<'p>(
+        &self,
+        py: pyo3::Python<'p>,
+        enc: &[u8],
+        sk_r: &pyo3::Bound<'p, pyo3::PyAny>,
+        kem_suite_id: &[u8; 5],
+    ) -> CryptographyResult<pyo3::Bound<'p, pyo3::types::PyBytes>> {
+        let pk_e = self.deserialize_public_key(py, enc)?;
+
+        let dh_result = self.exchange(py, sk_r, &pk_e)?;
+        let dh = dh_result.extract::<&[u8]>()?;
+
+        let pk_rm = sk_r.call_method0(pyo3::intern!(py, "public_key"))?;
+        let pk_rm_bytes = self.serialize_public_key(py, &pk_rm)?;
+
+        let mut kem_context = Vec::with_capacity(enc.len() + pk_rm_bytes.as_bytes().len());
+        kem_context.extend_from_slice(enc);
+        kem_context.extend_from_slice(pk_rm_bytes.as_bytes());
+
+        self.extract_and_expand(py, dh, &kem_context, kem_suite_id)
+    }
+
+    fn extract_and_expand<'p>(
+        &self,
+        py: pyo3::Python<'p>,
+        dh: &[u8],
+        kem_context: &[u8],
+        kem_suite_id: &[u8; 5],
+    ) -> CryptographyResult<pyo3::Bound<'p, pyo3::types::PyBytes>> {
+        let eae_prk = self.kem_labeled_extract(py, b"eae_prk", dh, kem_suite_id)?;
+        self.kem_labeled_expand(
+            py,
+            &eae_prk,
+            b"shared_secret",
+            kem_context,
+            self.secret_length(),
+            kem_suite_id,
+        )
+    }
+
+    fn kem_labeled_extract(
+        &self,
+        py: pyo3::Python<'_>,
+        label: &[u8],
+        ikm: &[u8],
+        kem_suite_id: &[u8; 5],
+    ) -> CryptographyResult<cryptography_openssl::hmac::DigestBytes> {
+        let mut labeled_ikm = Vec::with_capacity(HPKE_VERSION.len() + 5 + label.len() + ikm.len());
+        labeled_ikm.extend_from_slice(HPKE_VERSION);
+        labeled_ikm.extend_from_slice(kem_suite_id);
+        labeled_ikm.extend_from_slice(label);
+        labeled_ikm.extend_from_slice(ikm);
+
+        let algorithm = self.kem_hash_algorithm(py)?;
+        let buf = CffiBuf::from_bytes(py, &labeled_ikm);
+        hkdf_extract(py, &algorithm.unbind(), None, &buf)
+    }
+
+    fn kem_labeled_expand<'p>(
+        &self,
+        py: pyo3::Python<'p>,
+        prk: &[u8],
+        label: &[u8],
+        info: &[u8],
+        length: usize,
+        kem_suite_id: &[u8; 5],
+    ) -> CryptographyResult<pyo3::Bound<'p, pyo3::types::PyBytes>> {
+        let mut labeled_info =
+            Vec::with_capacity(2 + HPKE_VERSION.len() + 5 + label.len() + info.len());
+        labeled_info.extend_from_slice(&(length as u16).to_be_bytes());
+        labeled_info.extend_from_slice(HPKE_VERSION);
+        labeled_info.extend_from_slice(kem_suite_id);
+        labeled_info.extend_from_slice(label);
+        labeled_info.extend_from_slice(info);
+
+        let algorithm = self.kem_hash_algorithm(py)?;
+        Suite::hkdf_expand(py, algorithm, prk, &labeled_info, length)
     }
 
     fn generate_key<'p>(
@@ -275,6 +446,9 @@ impl KEM {
                         .into_any(),
                 )
             }
+            KEM::MLKEM768 => {
+                unreachable!("ML-KEM-768 does not generate an ephemeral DH key")
+            }
         }
     }
 
@@ -296,6 +470,9 @@ impl KEM {
                     ),
                 )?
                 .extract()?),
+            KEM::MLKEM768 => {
+                unreachable!("ML-KEM-768 public keys are not serialized via this path")
+            }
         }
     }
 
@@ -318,6 +495,9 @@ impl KEM {
                 let secp521r1 = types::SECP521R1.get(py)?.call0()?;
                 Ok(pyo3::Bound::new(py, ec::from_public_bytes(py, secp521r1, data)?)?.into_any())
             }
+            KEM::MLKEM768 => {
+                unreachable!("ML-KEM-768 encapsulated key is a ciphertext, not a public key")
+            }
         }
     }
 
@@ -335,6 +515,9 @@ impl KEM {
                 let ecdh = types::ECDH.get(py)?.call0()?;
                 Ok(private_key.call_method1(pyo3::intern!(py, "exchange"), (&ecdh, public_key))?)
             }
+            KEM::MLKEM768 => {
+                unreachable!("ML-KEM-768 does not perform a Diffie-Hellman exchange")
+            }
         }
     }
 
@@ -346,6 +529,9 @@ impl KEM {
             KEM::X25519 | KEM::P256 => Ok(types::SHA256.get(py)?.call0()?),
             KEM::P384 => Ok(types::SHA384.get(py)?.call0()?),
             KEM::P521 => Ok(types::SHA512.get(py)?.call0()?),
+            KEM::MLKEM768 => {
+                unreachable!("ML-KEM-768 does not use a KEM hash algorithm")
+            }
         }
     }
 }
@@ -484,105 +670,6 @@ impl Suite {
         hkdf_expand.derive(py, CffiBuf::from_bytes(py, prk))
     }
 
-    fn kem_labeled_extract(
-        &self,
-        py: pyo3::Python<'_>,
-        label: &[u8],
-        ikm: &[u8],
-    ) -> CryptographyResult<cryptography_openssl::hmac::DigestBytes> {
-        let mut labeled_ikm = Vec::with_capacity(HPKE_VERSION.len() + 5 + label.len() + ikm.len());
-        labeled_ikm.extend_from_slice(HPKE_VERSION);
-        labeled_ikm.extend_from_slice(&self.kem_suite_id);
-        labeled_ikm.extend_from_slice(label);
-        labeled_ikm.extend_from_slice(ikm);
-
-        let algorithm = self.kem.kem_hash_algorithm(py)?;
-        let buf = CffiBuf::from_bytes(py, &labeled_ikm);
-        hkdf_extract(py, &algorithm.unbind(), None, &buf)
-    }
-
-    fn kem_labeled_expand<'p>(
-        &self,
-        py: pyo3::Python<'p>,
-        prk: &[u8],
-        label: &[u8],
-        info: &[u8],
-        length: usize,
-    ) -> CryptographyResult<pyo3::Bound<'p, pyo3::types::PyBytes>> {
-        let mut labeled_info =
-            Vec::with_capacity(2 + HPKE_VERSION.len() + 5 + label.len() + info.len());
-        labeled_info.extend_from_slice(&(length as u16).to_be_bytes());
-        labeled_info.extend_from_slice(HPKE_VERSION);
-        labeled_info.extend_from_slice(&self.kem_suite_id);
-        labeled_info.extend_from_slice(label);
-        labeled_info.extend_from_slice(info);
-
-        let algorithm = self.kem.kem_hash_algorithm(py)?;
-        Suite::hkdf_expand(py, algorithm, prk, &labeled_info, length)
-    }
-
-    fn extract_and_expand<'p>(
-        &self,
-        py: pyo3::Python<'p>,
-        dh: &[u8],
-        kem_context: &[u8],
-    ) -> CryptographyResult<pyo3::Bound<'p, pyo3::types::PyBytes>> {
-        let eae_prk = self.kem_labeled_extract(py, b"eae_prk", dh)?;
-        self.kem_labeled_expand(
-            py,
-            &eae_prk,
-            b"shared_secret",
-            kem_context,
-            self.kem.secret_length(),
-        )
-    }
-
-    fn encap<'p>(
-        &self,
-        py: pyo3::Python<'p>,
-        pk_r: &pyo3::Bound<'_, pyo3::PyAny>,
-    ) -> CryptographyResult<(
-        pyo3::Bound<'p, pyo3::types::PyBytes>,
-        pyo3::Bound<'p, pyo3::types::PyBytes>,
-    )> {
-        let sk_e = self.kem.generate_key(py)?;
-        let pk_e = sk_e.call_method0(pyo3::intern!(py, "public_key"))?;
-        let pk_e_bytes = self.kem.serialize_public_key(py, &pk_e)?;
-        let pk_r_bytes = self.kem.serialize_public_key(py, pk_r)?;
-
-        let dh_result = self.kem.exchange(py, &sk_e, pk_r)?;
-        let dh = dh_result.extract::<&[u8]>()?;
-
-        let mut kem_context =
-            Vec::with_capacity(pk_e_bytes.as_bytes().len() + pk_r_bytes.as_bytes().len());
-        kem_context.extend_from_slice(pk_e_bytes.as_bytes());
-        kem_context.extend_from_slice(pk_r_bytes.as_bytes());
-
-        let shared_secret = self.extract_and_expand(py, dh, &kem_context)?;
-        Ok((shared_secret, pk_e_bytes))
-    }
-
-    fn decap<'p>(
-        &self,
-        py: pyo3::Python<'p>,
-        enc: &[u8],
-        sk_r: &pyo3::Bound<'_, pyo3::PyAny>,
-    ) -> CryptographyResult<pyo3::Bound<'p, pyo3::types::PyBytes>> {
-        let pk_e = self.kem.deserialize_public_key(py, enc)?;
-
-        let dh_result = self.kem.exchange(py, sk_r, &pk_e)?;
-        let dh = dh_result.extract::<&[u8]>()?;
-
-        let pk_rm = sk_r.call_method0(pyo3::intern!(py, "public_key"))?;
-        let pk_rm_bytes = self.kem.serialize_public_key(py, &pk_rm)?;
-
-        let mut kem_context = Vec::with_capacity(enc.len() + pk_rm_bytes.as_bytes().len());
-        kem_context.extend_from_slice(enc);
-        kem_context.extend_from_slice(pk_rm_bytes.as_bytes());
-
-        self.extract_and_expand(py, dh, &kem_context)
-    }
-
     fn hpke_labeled_extract(
         &self,
         py: pyo3::Python<'_>,
@@ -695,14 +782,14 @@ impl Suite {
         &self,
         py: pyo3::Python<'p>,
         plaintext: CffiBuf<'_>,
-        public_key: &pyo3::Bound<'_, pyo3::PyAny>,
+        public_key: &pyo3::Bound<'p, pyo3::PyAny>,
         info: Option<CffiBuf<'_>>,
         aad: Option<CffiBuf<'_>>,
     ) -> CryptographyResult<pyo3::Bound<'p, pyo3::types::PyBytes>> {
         self.kem.check_public_key(py, public_key)?;
         let info_bytes: &[u8] = info.as_ref().map(|b| b.as_bytes()).unwrap_or(b"");
 
-        let (shared_secret, enc) = self.encap(py, public_key)?;
+        let (shared_secret, enc) = self.kem.encap(py, public_key, &self.kem_suite_id)?;
         let (key, base_nonce) = self.key_schedule(py, shared_secret.as_bytes(), info_bytes)?;
 
         let ct = self.aead_encrypt(py, &key, &base_nonce, plaintext, aad)?;
@@ -724,7 +811,7 @@ impl Suite {
         &self,
         py: pyo3::Python<'p>,
         ciphertext: CffiBuf<'_>,
-        private_key: &pyo3::Bound<'_, pyo3::PyAny>,
+        private_key: &pyo3::Bound<'p, pyo3::PyAny>,
         info: Option<CffiBuf<'_>>,
         aad: Option<CffiBuf<'_>>,
     ) -> CryptographyResult<pyo3::Bound<'p, pyo3::types::PyBytes>> {
@@ -739,7 +826,8 @@ impl Suite {
         let (enc, ct) = ct_bytes.split_at(self.kem.enc_length());
 
         let shared_secret = self
-            .decap(py, enc, private_key)
+            .kem
+            .decap(py, enc, private_key, &self.kem_suite_id)
             .map_err(|_| CryptographyError::from(exceptions::InvalidTag::new_err(())))?;
         let (key, base_nonce) = self.key_schedule(py, shared_secret.as_bytes(), info_bytes)?;
 
@@ -843,7 +931,7 @@ impl Suite {
         &self,
         py: pyo3::Python<'p>,
         plaintext: CffiBuf<'_>,
-        public_key: &pyo3::Bound<'_, pyo3::PyAny>,
+        public_key: &pyo3::Bound<'p, pyo3::PyAny>,
         info: Option<CffiBuf<'_>>,
     ) -> CryptographyResult<pyo3::Bound<'p, pyo3::types::PyBytes>> {
         self.encrypt_inner(py, plaintext, public_key, info, None)
@@ -854,7 +942,7 @@ impl Suite {
         &self,
         py: pyo3::Python<'p>,
         ciphertext: CffiBuf<'_>,
-        private_key: &pyo3::Bound<'_, pyo3::PyAny>,
+        private_key: &pyo3::Bound<'p, pyo3::PyAny>,
         info: Option<CffiBuf<'_>>,
     ) -> CryptographyResult<pyo3::Bound<'p, pyo3::types::PyBytes>> {
         self.decrypt_inner(py, ciphertext, private_key, info, None)
@@ -867,7 +955,7 @@ fn _encrypt_with_aad<'p>(
     py: pyo3::Python<'p>,
     suite: &Suite,
     plaintext: CffiBuf<'_>,
-    public_key: &pyo3::Bound<'_, pyo3::PyAny>,
+    public_key: &pyo3::Bound<'p, pyo3::PyAny>,
     info: Option<CffiBuf<'_>>,
     aad: Option<CffiBuf<'_>>,
 ) -> CryptographyResult<pyo3::Bound<'p, pyo3::types::PyBytes>> {
@@ -880,7 +968,7 @@ fn _decrypt_with_aad<'p>(
     py: pyo3::Python<'p>,
     suite: &Suite,
     ciphertext: CffiBuf<'_>,
-    private_key: &pyo3::Bound<'_, pyo3::PyAny>,
+    private_key: &pyo3::Bound<'p, pyo3::PyAny>,
     info: Option<CffiBuf<'_>>,
     aad: Option<CffiBuf<'_>>,
 ) -> CryptographyResult<pyo3::Bound<'p, pyo3::types::PyBytes>> {
@@ -897,8 +985,65 @@ pub(crate) mod hpke {
 
 #[cfg(test)]
 mod tests {
-    use super::kdf_params;
-    use super::KDF;
+    use super::{kdf_params, kem_params};
+    use super::{KDF, KEM};
+
+    #[test]
+    fn test_mlkem768_secret_length() {
+        assert_eq!(KEM::MLKEM768.secret_length(), kem_params::MLKEM768_NSECRET);
+    }
+
+    #[test]
+    #[should_panic(expected = "ML-KEM-768 does not generate an ephemeral DH key")]
+    fn test_mlkem768_generate_key_unreachable() {
+        pyo3::Python::initialize();
+
+        pyo3::Python::attach(|py| {
+            let _ = KEM::MLKEM768.generate_key(py);
+        });
+    }
+
+    #[test]
+    #[should_panic(expected = "ML-KEM-768 public keys are not serialized via this path")]
+    fn test_mlkem768_serialize_public_key_unreachable() {
+        pyo3::Python::initialize();
+
+        pyo3::Python::attach(|py| {
+            let obj = py.None().into_bound(py);
+            let _ = KEM::MLKEM768.serialize_public_key(py, &obj);
+        });
+    }
+
+    #[test]
+    #[should_panic(expected = "ML-KEM-768 encapsulated key is a ciphertext, not a public key")]
+    fn test_mlkem768_deserialize_public_key_unreachable() {
+        pyo3::Python::initialize();
+
+        pyo3::Python::attach(|py| {
+            let _ = KEM::MLKEM768.deserialize_public_key(py, b"");
+        });
+    }
+
+    #[test]
+    #[should_panic(expected = "ML-KEM-768 does not perform a Diffie-Hellman exchange")]
+    fn test_mlkem768_exchange_unreachable() {
+        pyo3::Python::initialize();
+
+        pyo3::Python::attach(|py| {
+            let obj = py.None().into_bound(py);
+            let _ = KEM::MLKEM768.exchange(py, &obj, &obj);
+        });
+    }
+
+    #[test]
+    #[should_panic(expected = "ML-KEM-768 does not use a KEM hash algorithm")]
+    fn test_mlkem768_kem_hash_algorithm_unreachable() {
+        pyo3::Python::initialize();
+
+        pyo3::Python::attach(|py| {
+            let _ = KEM::MLKEM768.kem_hash_algorithm(py);
+        });
+    }
 
     #[test]
     #[should_panic(expected = "SHAKE128 is a one-stage KDF")]
