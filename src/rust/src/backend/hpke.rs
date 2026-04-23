@@ -49,6 +49,10 @@ mod kem_params {
     pub const MLKEM1024_ID: u16 = 0x0042;
     pub const MLKEM1024_NSECRET: usize = 32;
     pub const MLKEM1024_NENC: usize = 1568;
+
+    pub const MLKEM768_X25519_ID: u16 = 0x647A;
+    pub const MLKEM768_X25519_NSECRET: usize = 32;
+    pub const MLKEM768_X25519_NENC: usize = 1120;
 }
 
 mod kdf_params {
@@ -79,6 +83,7 @@ mod aead_params {
 }
 
 #[allow(clippy::upper_case_acronyms)]
+#[allow(non_camel_case_types)]
 #[pyo3::pyclass(
     frozen,
     eq,
@@ -94,6 +99,7 @@ pub(crate) enum KEM {
     P521,
     MLKEM768,
     MLKEM1024,
+    MLKEM768_X25519,
 }
 
 impl KEM {
@@ -159,6 +165,7 @@ impl KEM {
             KEM::P521 => kem_params::P521_ID,
             KEM::MLKEM768 => kem_params::MLKEM768_ID,
             KEM::MLKEM1024 => kem_params::MLKEM1024_ID,
+            KEM::MLKEM768_X25519 => kem_params::MLKEM768_X25519_ID,
         }
     }
 
@@ -170,6 +177,7 @@ impl KEM {
             KEM::P521 => kem_params::P521_NSECRET,
             KEM::MLKEM768 => kem_params::MLKEM768_NSECRET,
             KEM::MLKEM1024 => kem_params::MLKEM1024_NSECRET,
+            KEM::MLKEM768_X25519 => kem_params::MLKEM768_X25519_NSECRET,
         }
     }
 
@@ -181,6 +189,7 @@ impl KEM {
             KEM::P521 => kem_params::P521_NENC,
             KEM::MLKEM768 => kem_params::MLKEM768_NENC,
             KEM::MLKEM1024 => kem_params::MLKEM1024_NENC,
+            KEM::MLKEM768_X25519 => kem_params::MLKEM768_X25519_NENC,
         }
     }
 
@@ -234,6 +243,15 @@ impl KEM {
                     return Err(CryptographyError::from(
                         pyo3::exceptions::PyTypeError::new_err(
                             "Expected MLKEM1024PublicKey for KEM.MLKEM1024",
+                        ),
+                    ));
+                }
+            }
+            KEM::MLKEM768_X25519 => {
+                if !key.is_instance_of::<MlKem768X25519PublicKey>() {
+                    return Err(CryptographyError::from(
+                        pyo3::exceptions::PyTypeError::new_err(
+                            "Expected MLKEM768X25519PublicKey for KEM.MLKEM768_X25519",
                         ),
                     ));
                 }
@@ -296,6 +314,15 @@ impl KEM {
                     ));
                 }
             }
+            KEM::MLKEM768_X25519 => {
+                if !key.is_instance_of::<MlKem768X25519PrivateKey>() {
+                    return Err(CryptographyError::from(
+                        pyo3::exceptions::PyTypeError::new_err(
+                            "Expected MLKEM768X25519PrivateKey for KEM.MLKEM768_X25519",
+                        ),
+                    ));
+                }
+            }
         }
         Ok(())
     }
@@ -313,6 +340,10 @@ impl KEM {
             KEM::MLKEM768 | KEM::MLKEM1024 => {
                 let result = pk_r.call_method0(pyo3::intern!(py, "encapsulate"))?;
                 Ok(result.extract()?)
+            }
+            KEM::MLKEM768_X25519 => {
+                let hybrid = pk_r.cast::<MlKem768X25519PublicKey>()?;
+                hybrid.borrow().encapsulate(py)
             }
             KEM::X25519 | KEM::P256 | KEM::P384 | KEM::P521 => {
                 self.dhkem_encap(py, pk_r, kem_suite_id)
@@ -333,6 +364,10 @@ impl KEM {
                 Ok(sk_r
                     .call_method1(pyo3::intern!(py, "decapsulate"), (enc_bytes,))?
                     .extract()?)
+            }
+            KEM::MLKEM768_X25519 => {
+                let hybrid = sk_r.cast::<MlKem768X25519PrivateKey>()?;
+                hybrid.borrow().decapsulate(py, enc)
             }
             KEM::X25519 | KEM::P256 | KEM::P384 | KEM::P521 => {
                 self.dhkem_decap(py, enc, sk_r, kem_suite_id)
@@ -472,7 +507,7 @@ impl KEM {
                         .into_any(),
                 )
             }
-            KEM::MLKEM768 | KEM::MLKEM1024 => {
+            KEM::MLKEM768 | KEM::MLKEM1024 | KEM::MLKEM768_X25519 => {
                 unreachable!("ML-KEM does not generate an ephemeral DH key")
             }
         }
@@ -496,7 +531,7 @@ impl KEM {
                     ),
                 )?
                 .extract()?),
-            KEM::MLKEM768 | KEM::MLKEM1024 => {
+            KEM::MLKEM768 | KEM::MLKEM1024 | KEM::MLKEM768_X25519 => {
                 unreachable!("ML-KEM public keys are not serialized via this path")
             }
         }
@@ -521,7 +556,7 @@ impl KEM {
                 let secp521r1 = types::SECP521R1.get(py)?.call0()?;
                 Ok(pyo3::Bound::new(py, ec::from_public_bytes(py, secp521r1, data)?)?.into_any())
             }
-            KEM::MLKEM768 | KEM::MLKEM1024 => {
+            KEM::MLKEM768 | KEM::MLKEM1024 | KEM::MLKEM768_X25519 => {
                 unreachable!("ML-KEM encapsulated key is a ciphertext, not a public key")
             }
         }
@@ -541,7 +576,7 @@ impl KEM {
                 let ecdh = types::ECDH.get(py)?.call0()?;
                 Ok(private_key.call_method1(pyo3::intern!(py, "exchange"), (&ecdh, public_key))?)
             }
-            KEM::MLKEM768 | KEM::MLKEM1024 => {
+            KEM::MLKEM768 | KEM::MLKEM1024 | KEM::MLKEM768_X25519 => {
                 unreachable!("ML-KEM does not perform a Diffie-Hellman exchange")
             }
         }
@@ -555,7 +590,7 @@ impl KEM {
             KEM::X25519 | KEM::P256 => Ok(types::SHA256.get(py)?.call0()?),
             KEM::P384 => Ok(types::SHA384.get(py)?.call0()?),
             KEM::P521 => Ok(types::SHA512.get(py)?.call0()?),
-            KEM::MLKEM768 | KEM::MLKEM1024 => {
+            KEM::MLKEM768 | KEM::MLKEM1024 | KEM::MLKEM768_X25519 => {
                 unreachable!("ML-KEM does not use a KEM hash algorithm")
             }
         }
@@ -1001,12 +1036,223 @@ fn _decrypt_with_aad<'p>(
     suite.decrypt_inner(py, ciphertext, private_key, info, aad)
 }
 
+// MLKEM768-X25519 hybrid KEM (also known as X-Wing) used by HPKE KEM ID
+// 0x647A, specified in draft-connolly-cfrg-xwing-kem and draft-ietf-hpke-pq.
+// Only a constructor is exposed to Python; all encap/decap logic lives here.
+
+const MLKEM768_X25519_MLKEM_CT_LENGTH: usize = 1088;
+// `\./` + `/^\` — the X-Wing combiner label.
+const MLKEM768_X25519_LABEL: &[u8; 6] = b"\\.//^\\";
+
+fn mlkem768_x25519_combine<'p>(
+    py: pyo3::Python<'p>,
+    ss_m: &[u8],
+    ss_x: &[u8],
+    ct_x: &[u8],
+    pk_x: &[u8],
+) -> CryptographyResult<pyo3::Bound<'p, pyo3::types::PyBytes>> {
+    let algorithm = types::SHA3_256.get(py)?.call0()?;
+    let mut hash = Hash::new(py, &algorithm, None)?;
+    hash.update_bytes(ss_m)?;
+    hash.update_bytes(ss_x)?;
+    hash.update_bytes(ct_x)?;
+    hash.update_bytes(pk_x)?;
+    hash.update_bytes(MLKEM768_X25519_LABEL)?;
+    hash.finalize(py)
+}
+
+// NO-COVERAGE-START
+#[pyo3::pyclass(
+    frozen,
+    module = "cryptography.hazmat.bindings._rust.openssl.hpke",
+    name = "MLKEM768X25519PrivateKey"
+)]
+// NO-COVERAGE-END
+pub(crate) struct MlKem768X25519PrivateKey {
+    mlkem_key: pyo3::Py<pyo3::PyAny>,
+    x25519_key: pyo3::Py<pyo3::PyAny>,
+}
+
+impl MlKem768X25519PrivateKey {
+    fn decapsulate<'p>(
+        &self,
+        py: pyo3::Python<'p>,
+        enc: &[u8],
+    ) -> CryptographyResult<pyo3::Bound<'p, pyo3::types::PyBytes>> {
+        // `enc` is guaranteed by Suite::decrypt_inner to be exactly
+        // `enc_length()` bytes (1120), so we can split without a length check.
+        let (ct_m, ct_x) = enc.split_at(MLKEM768_X25519_MLKEM_CT_LENGTH);
+
+        let mlkem_key = self.mlkem_key.bind(py);
+        let ss_m = mlkem_key
+            .call_method1(
+                pyo3::intern!(py, "decapsulate"),
+                (pyo3::types::PyBytes::new(py, ct_m),),
+            )?
+            .extract::<pyo3::Bound<'_, pyo3::types::PyBytes>>()?;
+
+        let x25519_key = self.x25519_key.bind(py);
+        let ct_x_pk = pyo3::Bound::new(py, x25519::from_public_bytes(ct_x)?)?;
+        let ss_x = x25519_key
+            .call_method1(pyo3::intern!(py, "exchange"), (ct_x_pk,))?
+            .extract::<pyo3::Bound<'_, pyo3::types::PyBytes>>()?;
+        let pk_x = x25519_key
+            .call_method0(pyo3::intern!(py, "public_key"))?
+            .call_method0(pyo3::intern!(py, "public_bytes_raw"))?
+            .extract::<pyo3::Bound<'_, pyo3::types::PyBytes>>()?;
+
+        mlkem768_x25519_combine(py, ss_m.as_bytes(), ss_x.as_bytes(), ct_x, pk_x.as_bytes())
+    }
+}
+
+#[pyo3::pymethods]
+impl MlKem768X25519PrivateKey {
+    #[new]
+    fn new(
+        py: pyo3::Python<'_>,
+        mlkem_key: pyo3::Py<pyo3::PyAny>,
+        x25519_key: pyo3::Py<pyo3::PyAny>,
+    ) -> CryptographyResult<Self> {
+        if !mlkem_key
+            .bind(py)
+            .is_instance(&types::MLKEM768_PRIVATE_KEY.get(py)?)?
+        {
+            return Err(CryptographyError::from(
+                pyo3::exceptions::PyTypeError::new_err("Expected MLKEM768PrivateKey for mlkem_key"),
+            ));
+        }
+        if !x25519_key
+            .bind(py)
+            .is_instance(&types::X25519_PRIVATE_KEY.get(py)?)?
+        {
+            return Err(CryptographyError::from(
+                pyo3::exceptions::PyTypeError::new_err("Expected X25519PrivateKey for x25519_key"),
+            ));
+        }
+        Ok(MlKem768X25519PrivateKey {
+            mlkem_key,
+            x25519_key,
+        })
+    }
+
+    fn public_key(&self, py: pyo3::Python<'_>) -> CryptographyResult<MlKem768X25519PublicKey> {
+        let mlkem_pub = self
+            .mlkem_key
+            .bind(py)
+            .call_method0(pyo3::intern!(py, "public_key"))?
+            .unbind();
+        let x25519_pub = self
+            .x25519_key
+            .bind(py)
+            .call_method0(pyo3::intern!(py, "public_key"))?
+            .unbind();
+        Ok(MlKem768X25519PublicKey {
+            mlkem_key: mlkem_pub,
+            x25519_key: x25519_pub,
+        })
+    }
+}
+
+#[pyo3::pyclass(
+    frozen,
+    module = "cryptography.hazmat.bindings._rust.openssl.hpke",
+    name = "MLKEM768X25519PublicKey"
+)]
+pub(crate) struct MlKem768X25519PublicKey {
+    mlkem_key: pyo3::Py<pyo3::PyAny>,
+    x25519_key: pyo3::Py<pyo3::PyAny>,
+}
+
+impl MlKem768X25519PublicKey {
+    fn encapsulate<'p>(
+        &self,
+        py: pyo3::Python<'p>,
+    ) -> CryptographyResult<(
+        pyo3::Bound<'p, pyo3::types::PyBytes>,
+        pyo3::Bound<'p, pyo3::types::PyBytes>,
+    )> {
+        let (ss_m, ct_m) = self
+            .mlkem_key
+            .bind(py)
+            .call_method0(pyo3::intern!(py, "encapsulate"))?
+            .extract::<(
+                pyo3::Bound<'_, pyo3::types::PyBytes>,
+                pyo3::Bound<'_, pyo3::types::PyBytes>,
+            )>()?;
+
+        let x25519_key = self.x25519_key.bind(py);
+        let ephemeral = pyo3::Bound::new(py, x25519::generate_key()?)?;
+        let ct_x = ephemeral
+            .call_method0(pyo3::intern!(py, "public_key"))?
+            .call_method0(pyo3::intern!(py, "public_bytes_raw"))?
+            .extract::<pyo3::Bound<'_, pyo3::types::PyBytes>>()?;
+        let ss_x = ephemeral
+            .call_method1(pyo3::intern!(py, "exchange"), (x25519_key,))?
+            .extract::<pyo3::Bound<'_, pyo3::types::PyBytes>>()?;
+        let pk_x = x25519_key
+            .call_method0(pyo3::intern!(py, "public_bytes_raw"))?
+            .extract::<pyo3::Bound<'_, pyo3::types::PyBytes>>()?;
+
+        let shared_secret = mlkem768_x25519_combine(
+            py,
+            ss_m.as_bytes(),
+            ss_x.as_bytes(),
+            ct_x.as_bytes(),
+            pk_x.as_bytes(),
+        )?;
+
+        let ct_m_bytes = ct_m.as_bytes();
+        let ct_x_bytes = ct_x.as_bytes();
+        let enc = pyo3::types::PyBytes::new_with(py, ct_m_bytes.len() + ct_x_bytes.len(), |buf| {
+            buf[..ct_m_bytes.len()].copy_from_slice(ct_m_bytes);
+            buf[ct_m_bytes.len()..].copy_from_slice(ct_x_bytes);
+            Ok(())
+        })?;
+
+        Ok((shared_secret, enc))
+    }
+}
+
+#[pyo3::pymethods]
+impl MlKem768X25519PublicKey {
+    #[new]
+    fn new(
+        py: pyo3::Python<'_>,
+        mlkem_key: pyo3::Py<pyo3::PyAny>,
+        x25519_key: pyo3::Py<pyo3::PyAny>,
+    ) -> CryptographyResult<Self> {
+        if !mlkem_key
+            .bind(py)
+            .is_instance(&types::MLKEM768_PUBLIC_KEY.get(py)?)?
+        {
+            return Err(CryptographyError::from(
+                pyo3::exceptions::PyTypeError::new_err("Expected MLKEM768PublicKey for mlkem_key"),
+            ));
+        }
+        if !x25519_key
+            .bind(py)
+            .is_instance(&types::X25519_PUBLIC_KEY.get(py)?)?
+        {
+            return Err(CryptographyError::from(
+                pyo3::exceptions::PyTypeError::new_err("Expected X25519PublicKey for x25519_key"),
+            ));
+        }
+        Ok(MlKem768X25519PublicKey {
+            mlkem_key,
+            x25519_key,
+        })
+    }
+}
+
 #[pyo3::pymodule(gil_used = false)]
 pub(crate) mod hpke {
     // stable and nightly rustfmt disagree on import ordering
     #[rustfmt::skip]
     #[pymodule_export]
-    use super::{_decrypt_with_aad, _encrypt_with_aad, Suite, AEAD, KDF, KEM};
+    use super::{
+        _decrypt_with_aad, _encrypt_with_aad, MlKem768X25519PrivateKey,
+        MlKem768X25519PublicKey, Suite, AEAD, KDF, KEM,
+    };
 }
 
 #[cfg(test)]
@@ -1024,6 +1270,14 @@ mod tests {
         assert_eq!(
             KEM::MLKEM1024.secret_length(),
             kem_params::MLKEM1024_NSECRET
+        );
+    }
+
+    #[test]
+    fn test_mlkem768_x25519_secret_length() {
+        assert_eq!(
+            KEM::MLKEM768_X25519.secret_length(),
+            kem_params::MLKEM768_X25519_NSECRET
         );
     }
 

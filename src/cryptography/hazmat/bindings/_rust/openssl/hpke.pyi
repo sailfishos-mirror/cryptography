@@ -12,6 +12,7 @@ class KEM:
     P521: KEM
     MLKEM768: KEM
     MLKEM1024: KEM
+    MLKEM768_X25519: KEM
 
 class KDF:
     HKDF_SHA256: KDF
@@ -25,6 +26,21 @@ class AEAD:
     AES_256_GCM: AEAD
     CHACHA20_POLY1305: AEAD
 
+class MLKEM768X25519PrivateKey:
+    def __init__(
+        self,
+        mlkem_key: mlkem.MLKEM768PrivateKey,
+        x25519_key: x25519.X25519PrivateKey,
+    ) -> None: ...
+    def public_key(self) -> MLKEM768X25519PublicKey: ...
+
+class MLKEM768X25519PublicKey:
+    def __init__(
+        self,
+        mlkem_key: mlkem.MLKEM768PublicKey,
+        x25519_key: x25519.X25519PublicKey,
+    ) -> None: ...
+
 class Suite:
     def __init__(self, kem: KEM, kdf: KDF, aead: AEAD) -> None: ...
     def encrypt(
@@ -33,7 +49,8 @@ class Suite:
         public_key: x25519.X25519PublicKey
         | ec.EllipticCurvePublicKey
         | mlkem.MLKEM768PublicKey
-        | mlkem.MLKEM1024PublicKey,
+        | mlkem.MLKEM1024PublicKey
+        | MLKEM768X25519PublicKey,
         info: Buffer | None = None,
     ) -> bytes: ...
     def decrypt(
@@ -42,7 +59,8 @@ class Suite:
         private_key: x25519.X25519PrivateKey
         | ec.EllipticCurvePrivateKey
         | mlkem.MLKEM768PrivateKey
-        | mlkem.MLKEM1024PrivateKey,
+        | mlkem.MLKEM1024PrivateKey
+        | MLKEM768X25519PrivateKey,
         info: Buffer | None = None,
     ) -> bytes: ...
 
@@ -52,7 +70,8 @@ def _encrypt_with_aad(
     public_key: x25519.X25519PublicKey
     | ec.EllipticCurvePublicKey
     | mlkem.MLKEM768PublicKey
-    | mlkem.MLKEM1024PublicKey,
+    | mlkem.MLKEM1024PublicKey
+    | MLKEM768X25519PublicKey,
     info: Buffer | None = None,
     aad: Buffer | None = None,
 ) -> bytes: ...
@@ -62,7 +81,8 @@ def _decrypt_with_aad(
     private_key: x25519.X25519PrivateKey
     | ec.EllipticCurvePrivateKey
     | mlkem.MLKEM768PrivateKey
-    | mlkem.MLKEM1024PrivateKey,
+    | mlkem.MLKEM1024PrivateKey
+    | MLKEM768X25519PrivateKey,
     info: Buffer | None = None,
     aad: Buffer | None = None,
 ) -> bytes: ...
