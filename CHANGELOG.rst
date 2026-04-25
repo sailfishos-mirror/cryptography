@@ -14,6 +14,10 @@ Changelog
   ``TBSCertList.signature`` algorithm does not match the outer
   ``signatureAlgorithm`` now raises ``ValueError``. Previously, such CRLs
   were parsed successfully and only rejected during signature validation.
+* **BACKWARDS INCOMPATIBLE:** Support for ``x86_64`` macOS has been removed.
+  We now only publish ``arm64`` wheels for macOS.
+* **BACKWARDS INCOMPATIBLE:** Support for 32-bit Windows has been removed.
+  Users should move to a 64-bit Python installation.
 
 
 .. _v47-0-0:
