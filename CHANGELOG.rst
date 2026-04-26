@@ -14,6 +14,21 @@ Changelog
   ``TBSCertList.signature`` algorithm does not match the outer
   ``signatureAlgorithm`` now raises ``ValueError``. Previously, such CRLs
   were parsed successfully and only rejected during signature validation.
+* Added
+  :meth:`~cryptography.x509.verification.PolicyBuilder.permitted_public_key_algorithms`
+  and
+  :meth:`~cryptography.x509.verification.PolicyBuilder.permitted_signature_algorithms`
+  to allow callers to override the WebPKI default algorithm sets used by
+  :class:`~cryptography.x509.verification.ServerVerifier` and
+  :class:`~cryptography.x509.verification.ClientVerifier`. The sets are
+  expressed as
+  :class:`~cryptography.x509.verification.PublicKeyAlgorithm` and
+  :class:`~cryptography.x509.verification.SignatureAlgorithm`
+  enumerations, both of which include Ed25519 and Ed448. The current
+  policy is also exposed via
+  :attr:`Policy.permitted_public_key_algorithms <cryptography.x509.verification.Policy.permitted_public_key_algorithms>`
+  and
+  :attr:`Policy.permitted_signature_algorithms <cryptography.x509.verification.Policy.permitted_signature_algorithms>`.
 
 
 .. _v47-0-0:

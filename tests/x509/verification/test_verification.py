@@ -19,6 +19,8 @@ from cryptography.x509.verification import (
     ExtensionPolicy,
     Policy,
     PolicyBuilder,
+    PublicKeyAlgorithm,
+    SignatureAlgorithm,
     Store,
     VerificationError,
 )
@@ -50,6 +52,93 @@ class TestPolicyBuilder:
     def test_max_chain_depth_already_set(self):
         with pytest.raises(ValueError):
             PolicyBuilder().max_chain_depth(8).max_chain_depth(9)
+
+    def test_permitted_public_key_algorithms_already_set(self):
+        with pytest.raises(
+            ValueError,
+            match="permitted public key algorithms may only be set once",
+        ):
+            PolicyBuilder().permitted_public_key_algorithms(
+                {PublicKeyAlgorithm.RSA}
+            ).permitted_public_key_algorithms({PublicKeyAlgorithm.ED25519})
+
+    def test_permitted_signature_algorithms_already_set(self):
+        with pytest.raises(
+            ValueError,
+            match="permitted signature algorithms may only be set once",
+        ):
+            PolicyBuilder().permitted_signature_algorithms(
+                {SignatureAlgorithm.RSA_PKCS1V15_SHA256}
+            ).permitted_signature_algorithms({SignatureAlgorithm.ED25519})
+
+    def test_permitted_public_key_algorithms_empty(self):
+        with pytest.raises(
+            ValueError,
+            match="permitted_public_key_algorithms must not be empty",
+        ):
+            PolicyBuilder().permitted_public_key_algorithms(set())
+
+    def test_permitted_signature_algorithms_empty(self):
+        with pytest.raises(
+            ValueError,
+            match="permitted_signature_algorithms must not be empty",
+        ):
+            PolicyBuilder().permitted_signature_algorithms(set())
+
+    def test_permitted_algorithms_default(self):
+        # The default WebPKI policy includes RSA, secp256r1, secp384r1,
+        # and secp521r1 SPKIs.
+        verifier = (
+            PolicyBuilder()
+            .store(dummy_store())
+            .build_server_verifier(DNSName("cryptography.io"))
+        )
+
+        assert verifier.policy.permitted_public_key_algorithms == frozenset(
+            {
+                PublicKeyAlgorithm.RSA,
+                PublicKeyAlgorithm.SECP256R1,
+                PublicKeyAlgorithm.SECP384R1,
+                PublicKeyAlgorithm.SECP521R1,
+            }
+        )
+        assert verifier.policy.permitted_signature_algorithms == frozenset(
+            {
+                SignatureAlgorithm.RSA_PKCS1V15_SHA256,
+                SignatureAlgorithm.RSA_PKCS1V15_SHA384,
+                SignatureAlgorithm.RSA_PKCS1V15_SHA512,
+                SignatureAlgorithm.RSA_PSS_SHA256,
+                SignatureAlgorithm.RSA_PSS_SHA384,
+                SignatureAlgorithm.RSA_PSS_SHA512,
+                SignatureAlgorithm.ECDSA_SHA256,
+                SignatureAlgorithm.ECDSA_SHA384,
+                SignatureAlgorithm.ECDSA_SHA512,
+            }
+        )
+
+    def test_permitted_algorithms_custom(self):
+        public_keys = {
+            PublicKeyAlgorithm.RSA,
+            PublicKeyAlgorithm.ED25519,
+        }
+        signatures = {
+            SignatureAlgorithm.RSA_PKCS1V15_SHA256,
+            SignatureAlgorithm.ED25519,
+        }
+        verifier = (
+            PolicyBuilder()
+            .store(dummy_store())
+            .permitted_public_key_algorithms(public_keys)
+            .permitted_signature_algorithms(signatures)
+            .build_server_verifier(DNSName("cryptography.io"))
+        )
+
+        assert verifier.policy.permitted_public_key_algorithms == frozenset(
+            public_keys
+        )
+        assert verifier.policy.permitted_signature_algorithms == frozenset(
+            signatures
+        )
 
     def test_ipaddress_subject(self):
         verifier = (
@@ -124,6 +213,141 @@ class TestStore:
     def test_store_rejects_non_certificates(self):
         with pytest.raises(TypeError):
             Store(["not a cert"])  # type: ignore[list-item]
+
+
+def _build_ed25519_chain():
+    from cryptography.hazmat.primitives.asymmetric import ed25519
+
+    ca_key = ed25519.Ed25519PrivateKey.generate()
+    leaf_key = ed25519.Ed25519PrivateKey.generate()
+
+    ca_name = x509.Name(
+        [x509.NameAttribute(x509.NameOID.COMMON_NAME, "CA")]
+    )
+    leaf_name = x509.Name(
+        [x509.NameAttribute(x509.NameOID.COMMON_NAME, "leaf")]
+    )
+
+    not_before = datetime.datetime(2024, 1, 1)
+    not_after = datetime.datetime(2034, 1, 1)
+    ca_ski = x509.SubjectKeyIdentifier.from_public_key(ca_key.public_key())
+
+    ca_cert = (
+        x509.CertificateBuilder()
+        .subject_name(ca_name)
+        .issuer_name(ca_name)
+        .public_key(ca_key.public_key())
+        .serial_number(1)
+        .not_valid_before(not_before)
+        .not_valid_after(not_after)
+        .add_extension(
+            x509.BasicConstraints(ca=True, path_length=None), True
+        )
+        .add_extension(ca_ski, False)
+        .add_extension(
+            x509.KeyUsage(
+                digital_signature=False,
+                content_commitment=False,
+                key_encipherment=False,
+                data_encipherment=False,
+                key_agreement=False,
+                key_cert_sign=True,
+                crl_sign=True,
+                encipher_only=False,
+                decipher_only=False,
+            ),
+            True,
+        )
+        .sign(ca_key, None)
+    )
+
+    leaf_cert = (
+        x509.CertificateBuilder()
+        .subject_name(leaf_name)
+        .issuer_name(ca_name)
+        .public_key(leaf_key.public_key())
+        .serial_number(2)
+        .not_valid_before(not_before)
+        .not_valid_after(not_after)
+        .add_extension(
+            x509.BasicConstraints(ca=False, path_length=None), True
+        )
+        .add_extension(
+            x509.AuthorityKeyIdentifier.from_issuer_subject_key_identifier(
+                ca_ski
+            ),
+            False,
+        )
+        .add_extension(
+            x509.SubjectAlternativeName([x509.DNSName("example.com")]),
+            False,
+        )
+        .add_extension(
+            x509.ExtendedKeyUsage([ExtendedKeyUsageOID.SERVER_AUTH]), False
+        )
+        .sign(ca_key, None)
+    )
+
+    return ca_cert, leaf_cert
+
+
+class TestPermittedAlgorithms:
+    def test_default_policy_rejects_ed25519(self):
+        ca_cert, leaf_cert = _build_ed25519_chain()
+        store = Store([ca_cert])
+        validation_time = datetime.datetime(2024, 6, 1)
+        verifier = (
+            PolicyBuilder()
+            .store(store)
+            .time(validation_time)
+            .build_server_verifier(DNSName("example.com"))
+        )
+
+        with pytest.raises(
+            VerificationError, match="Forbidden public key algorithm"
+        ):
+            verifier.verify(leaf_cert, [])
+
+    def test_permitting_ed25519_allows_verification(self):
+        ca_cert, leaf_cert = _build_ed25519_chain()
+        store = Store([ca_cert])
+        validation_time = datetime.datetime(2024, 6, 1)
+        verifier = (
+            PolicyBuilder()
+            .store(store)
+            .time(validation_time)
+            .permitted_public_key_algorithms(
+                {PublicKeyAlgorithm.ED25519}
+            )
+            .permitted_signature_algorithms(
+                {SignatureAlgorithm.ED25519}
+            )
+            .build_server_verifier(DNSName("example.com"))
+        )
+
+        chain = verifier.verify(leaf_cert, [])
+        assert chain[0] == leaf_cert
+        assert chain[-1] == ca_cert
+
+    def test_forbidding_signature_algorithm_rejects(self):
+        ca_cert, leaf_cert = _build_ed25519_chain()
+        store = Store([ca_cert])
+        validation_time = datetime.datetime(2024, 6, 1)
+        # Permit Ed25519 SPKI but not Ed25519 signatures.
+        verifier = (
+            PolicyBuilder()
+            .store(store)
+            .time(validation_time)
+            .permitted_public_key_algorithms(
+                {PublicKeyAlgorithm.ED25519}
+            )
+            .build_server_verifier(DNSName("example.com"))
+        )
+
+        with pytest.raises(
+            VerificationError, match="Forbidden signature algorithm"
+        ):
+            verifier.verify(leaf_cert, [])
 
 
 class TestClientVerifier:

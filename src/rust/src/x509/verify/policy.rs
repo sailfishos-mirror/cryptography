@@ -1,4 +1,4 @@
-use super::OwnedPolicyDefinition;
+use super::{OwnedPolicyDefinition, PyPublicKeyAlgorithm, PySignatureAlgorithm};
 use crate::asn1::oid_to_py_oid;
 use crate::x509::datetime_to_py;
 
@@ -41,5 +41,39 @@ impl PyPolicy {
         self.policy_definition
             .borrow_dependent()
             .minimum_rsa_modulus
+    }
+
+    #[getter]
+    fn permitted_public_key_algorithms<'p>(
+        &self,
+        py: pyo3::Python<'p>,
+    ) -> pyo3::PyResult<pyo3::Bound<'p, pyo3::types::PyFrozenSet>> {
+        let permitted = &self
+            .policy_definition
+            .borrow_dependent()
+            .permitted_public_key_algorithms;
+        let items: Vec<pyo3::Py<pyo3::PyAny>> = permitted
+            .iter()
+            .filter_map(PyPublicKeyAlgorithm::from_algorithm_identifier)
+            .map(|a| pyo3::Py::new(py, a).map(|p| p.into_any()))
+            .collect::<pyo3::PyResult<_>>()?;
+        pyo3::types::PyFrozenSet::new(py, &items)
+    }
+
+    #[getter]
+    fn permitted_signature_algorithms<'p>(
+        &self,
+        py: pyo3::Python<'p>,
+    ) -> pyo3::PyResult<pyo3::Bound<'p, pyo3::types::PyFrozenSet>> {
+        let permitted = &self
+            .policy_definition
+            .borrow_dependent()
+            .permitted_signature_algorithms;
+        let items: Vec<pyo3::Py<pyo3::PyAny>> = permitted
+            .iter()
+            .filter_map(PySignatureAlgorithm::from_algorithm_identifier)
+            .map(|a| pyo3::Py::new(py, a).map(|p| p.into_any()))
+            .collect::<pyo3::PyResult<_>>()?;
+        pyo3::types::PyFrozenSet::new(py, &items)
     }
 }

@@ -37,27 +37,39 @@ const WEBPKI_MINIMUM_RSA_MODULUS: usize = 2048;
 // SubjectPublicKeyInfo AlgorithmIdentifier constants, as defined in CA/B 7.1.3.1.
 
 // RSA
-const SPKI_RSA: AlgorithmIdentifier<'_> = AlgorithmIdentifier {
+pub const SPKI_RSA: AlgorithmIdentifier<'_> = AlgorithmIdentifier {
     oid: asn1::DefinedByMarker::marker(),
     params: AlgorithmParameters::Rsa(Some(())),
 };
 
 // SECP256R1
-const SPKI_SECP256R1: AlgorithmIdentifier<'_> = AlgorithmIdentifier {
+pub const SPKI_SECP256R1: AlgorithmIdentifier<'_> = AlgorithmIdentifier {
     oid: asn1::DefinedByMarker::marker(),
     params: AlgorithmParameters::Ec(EcParameters::NamedCurve(EC_SECP256R1)),
 };
 
 // SECP384R1
-const SPKI_SECP384R1: AlgorithmIdentifier<'_> = AlgorithmIdentifier {
+pub const SPKI_SECP384R1: AlgorithmIdentifier<'_> = AlgorithmIdentifier {
     oid: asn1::DefinedByMarker::marker(),
     params: AlgorithmParameters::Ec(EcParameters::NamedCurve(EC_SECP384R1)),
 };
 
 // SECP521R1
-const SPKI_SECP521R1: AlgorithmIdentifier<'_> = AlgorithmIdentifier {
+pub const SPKI_SECP521R1: AlgorithmIdentifier<'_> = AlgorithmIdentifier {
     oid: asn1::DefinedByMarker::marker(),
     params: AlgorithmParameters::Ec(EcParameters::NamedCurve(EC_SECP521R1)),
+};
+
+// Ed25519
+pub const SPKI_ED25519: AlgorithmIdentifier<'_> = AlgorithmIdentifier {
+    oid: asn1::DefinedByMarker::marker(),
+    params: AlgorithmParameters::Ed25519,
+};
+
+// Ed448
+pub const SPKI_ED448: AlgorithmIdentifier<'_> = AlgorithmIdentifier {
+    oid: asn1::DefinedByMarker::marker(),
+    params: AlgorithmParameters::Ed448,
 };
 
 /// Permitted algorithms, from CA/B Forum's Baseline Requirements, section 7.1.3.1 (page 96)
@@ -75,25 +87,25 @@ pub static WEBPKI_PERMITTED_SPKI_ALGORITHMS: LazyLock<Arc<HashSet<AlgorithmIdent
 // Signature AlgorithmIdentifier constants, as defined in CA/B 7.1.3.2.
 
 // RSASSA‐PKCS1‐v1_5 with SHA‐256
-const RSASSA_PKCS1V15_SHA256: AlgorithmIdentifier<'_> = AlgorithmIdentifier {
+pub const RSASSA_PKCS1V15_SHA256: AlgorithmIdentifier<'_> = AlgorithmIdentifier {
     oid: asn1::DefinedByMarker::marker(),
     params: AlgorithmParameters::RsaWithSha256(Some(())),
 };
 
 // RSASSA‐PKCS1‐v1_5 with SHA‐384
-const RSASSA_PKCS1V15_SHA384: AlgorithmIdentifier<'_> = AlgorithmIdentifier {
+pub const RSASSA_PKCS1V15_SHA384: AlgorithmIdentifier<'_> = AlgorithmIdentifier {
     oid: asn1::DefinedByMarker::marker(),
     params: AlgorithmParameters::RsaWithSha384(Some(())),
 };
 
 // RSASSA‐PKCS1‐v1_5 with SHA‐512
-const RSASSA_PKCS1V15_SHA512: AlgorithmIdentifier<'_> = AlgorithmIdentifier {
+pub const RSASSA_PKCS1V15_SHA512: AlgorithmIdentifier<'_> = AlgorithmIdentifier {
     oid: asn1::DefinedByMarker::marker(),
     params: AlgorithmParameters::RsaWithSha512(Some(())),
 };
 
 // RSASSA‐PSS with SHA‐256, MGF‐1 with SHA‐256, and a salt length of 32 bytes
-static RSASSA_PSS_SHA256: LazyLock<AlgorithmIdentifier<'_>> =
+pub static RSASSA_PSS_SHA256: LazyLock<AlgorithmIdentifier<'_>> =
     LazyLock::new(|| AlgorithmIdentifier {
         oid: asn1::DefinedByMarker::marker(),
         params: AlgorithmParameters::RsaPss(Some(Box::new(RsaPssParameters {
@@ -105,7 +117,7 @@ static RSASSA_PSS_SHA256: LazyLock<AlgorithmIdentifier<'_>> =
     });
 
 // RSASSA‐PSS with SHA‐384, MGF‐1 with SHA‐384, and a salt length of 48 bytes
-static RSASSA_PSS_SHA384: LazyLock<AlgorithmIdentifier<'_>> =
+pub static RSASSA_PSS_SHA384: LazyLock<AlgorithmIdentifier<'_>> =
     LazyLock::new(|| AlgorithmIdentifier {
         oid: asn1::DefinedByMarker::marker(),
         params: AlgorithmParameters::RsaPss(Some(Box::new(RsaPssParameters {
@@ -117,7 +129,7 @@ static RSASSA_PSS_SHA384: LazyLock<AlgorithmIdentifier<'_>> =
     });
 
 // RSASSA‐PSS with SHA‐512, MGF‐1 with SHA‐512, and a salt length of 64 bytes
-static RSASSA_PSS_SHA512: LazyLock<AlgorithmIdentifier<'_>> =
+pub static RSASSA_PSS_SHA512: LazyLock<AlgorithmIdentifier<'_>> =
     LazyLock::new(|| AlgorithmIdentifier {
         oid: asn1::DefinedByMarker::marker(),
         params: AlgorithmParameters::RsaPss(Some(Box::new(RsaPssParameters {
@@ -129,21 +141,33 @@ static RSASSA_PSS_SHA512: LazyLock<AlgorithmIdentifier<'_>> =
     });
 
 // For P-256: the signature MUST use ECDSA with SHA‐256
-const ECDSA_SHA256: AlgorithmIdentifier<'_> = AlgorithmIdentifier {
+pub const ECDSA_SHA256: AlgorithmIdentifier<'_> = AlgorithmIdentifier {
     oid: asn1::DefinedByMarker::marker(),
     params: AlgorithmParameters::EcDsaWithSha256(None),
 };
 
 // For P-384: the signature MUST use ECDSA with SHA‐384
-const ECDSA_SHA384: AlgorithmIdentifier<'_> = AlgorithmIdentifier {
+pub const ECDSA_SHA384: AlgorithmIdentifier<'_> = AlgorithmIdentifier {
     oid: asn1::DefinedByMarker::marker(),
     params: AlgorithmParameters::EcDsaWithSha384(None),
 };
 
 // For P-521: the signature MUST use ECDSA with SHA‐512
-const ECDSA_SHA512: AlgorithmIdentifier<'_> = AlgorithmIdentifier {
+pub const ECDSA_SHA512: AlgorithmIdentifier<'_> = AlgorithmIdentifier {
     oid: asn1::DefinedByMarker::marker(),
     params: AlgorithmParameters::EcDsaWithSha512(None),
+};
+
+// Ed25519 (signature)
+pub const ED25519: AlgorithmIdentifier<'_> = AlgorithmIdentifier {
+    oid: asn1::DefinedByMarker::marker(),
+    params: AlgorithmParameters::Ed25519,
+};
+
+// Ed448 (signature)
+pub const ED448: AlgorithmIdentifier<'_> = AlgorithmIdentifier {
+    oid: asn1::DefinedByMarker::marker(),
+    params: AlgorithmParameters::Ed448,
 };
 
 /// Permitted algorithms, from CA/B Forum's Baseline Requirements, section 7.1.3.2 (pages 96-98)
@@ -240,6 +264,7 @@ pub struct PolicyDefinition<'a, B: CryptoOps> {
 }
 
 impl<'a, B: CryptoOps + 'a> PolicyDefinition<'a, B> {
+    #[allow(clippy::too_many_arguments)]
     fn new(
         ops: B,
         subject: Option<Subject<'a>>,
@@ -248,6 +273,8 @@ impl<'a, B: CryptoOps + 'a> PolicyDefinition<'a, B> {
         extended_key_usage: ObjectIdentifier,
         ca_extension_policy: Option<ExtensionPolicy<'a, B>>,
         ee_extension_policy: Option<ExtensionPolicy<'a, B>>,
+        permitted_public_key_algorithms: Option<Arc<HashSet<AlgorithmIdentifier<'a>>>>,
+        permitted_signature_algorithms: Option<Arc<HashSet<AlgorithmIdentifier<'a>>>>,
     ) -> Result<Self, &'static str> {
         let retval = Self {
             ops,
@@ -256,8 +283,10 @@ impl<'a, B: CryptoOps + 'a> PolicyDefinition<'a, B> {
             validation_time: time,
             extended_key_usage,
             minimum_rsa_modulus: WEBPKI_MINIMUM_RSA_MODULUS,
-            permitted_public_key_algorithms: Arc::clone(&*WEBPKI_PERMITTED_SPKI_ALGORITHMS),
-            permitted_signature_algorithms: Arc::clone(&*WEBPKI_PERMITTED_SIGNATURE_ALGORITHMS),
+            permitted_public_key_algorithms: permitted_public_key_algorithms
+                .unwrap_or_else(|| Arc::clone(&*WEBPKI_PERMITTED_SPKI_ALGORITHMS)),
+            permitted_signature_algorithms: permitted_signature_algorithms
+                .unwrap_or_else(|| Arc::clone(&*WEBPKI_PERMITTED_SIGNATURE_ALGORITHMS)),
             ca_extension_policy: ca_extension_policy
                 .unwrap_or_else(ExtensionPolicy::new_default_webpki_ca),
             ee_extension_policy: ee_extension_policy
@@ -298,12 +327,15 @@ impl<'a, B: CryptoOps + 'a> PolicyDefinition<'a, B> {
     /// **IMPORTANT**: This is **not** the appropriate API for verifying
     /// website (i.e. server) certificates. For that, you **must** use
     /// [`Policy::server`].
+    #[allow(clippy::too_many_arguments)]
     pub fn client(
         ops: B,
         time: asn1::DateTime,
         max_chain_depth: Option<u8>,
         ca_extension_policy: Option<ExtensionPolicy<'a, B>>,
         ee_extension_policy: Option<ExtensionPolicy<'a, B>>,
+        permitted_public_key_algorithms: Option<Arc<HashSet<AlgorithmIdentifier<'a>>>>,
+        permitted_signature_algorithms: Option<Arc<HashSet<AlgorithmIdentifier<'a>>>>,
     ) -> Result<Self, &'static str> {
         Self::new(
             ops,
@@ -313,11 +345,14 @@ impl<'a, B: CryptoOps + 'a> PolicyDefinition<'a, B> {
             EKU_CLIENT_AUTH_OID.clone(),
             ca_extension_policy,
             ee_extension_policy,
+            permitted_public_key_algorithms,
+            permitted_signature_algorithms,
         )
     }
 
     /// Create a new policy with defaults for the server certificate profile
     /// defined in the CA/B Forum's Basic Requirements.
+    #[allow(clippy::too_many_arguments)]
     pub fn server(
         ops: B,
         subject: Subject<'a>,
@@ -325,6 +360,8 @@ impl<'a, B: CryptoOps + 'a> PolicyDefinition<'a, B> {
         max_chain_depth: Option<u8>,
         ca_extension_policy: Option<ExtensionPolicy<'a, B>>,
         ee_extension_policy: Option<ExtensionPolicy<'a, B>>,
+        permitted_public_key_algorithms: Option<Arc<HashSet<AlgorithmIdentifier<'a>>>>,
+        permitted_signature_algorithms: Option<Arc<HashSet<AlgorithmIdentifier<'a>>>>,
     ) -> Result<Self, &'static str> {
         Self::new(
             ops,
@@ -334,6 +371,8 @@ impl<'a, B: CryptoOps + 'a> PolicyDefinition<'a, B> {
             EKU_SERVER_AUTH_OID.clone(),
             ca_extension_policy,
             ee_extension_policy,
+            permitted_public_key_algorithms,
+            permitted_signature_algorithms,
         )
     }
 }

@@ -217,6 +217,12 @@ class PolicyBuilder:
     def extension_policies(
         self, *, ca_policy: ExtensionPolicy, ee_policy: ExtensionPolicy
     ) -> PolicyBuilder: ...
+    def permitted_public_key_algorithms(
+        self, algorithms: typing.Iterable[PublicKeyAlgorithm]
+    ) -> PolicyBuilder: ...
+    def permitted_signature_algorithms(
+        self, algorithms: typing.Iterable[SignatureAlgorithm]
+    ) -> PolicyBuilder: ...
     def build_client_verifier(self) -> ClientVerifier: ...
     def build_server_verifier(
         self, subject: x509.verification.Subject
@@ -233,11 +239,40 @@ class Policy:
     def extended_key_usage(self) -> x509.ObjectIdentifier: ...
     @property
     def minimum_rsa_modulus(self) -> int: ...
+    @property
+    def permitted_public_key_algorithms(
+        self,
+    ) -> frozenset[PublicKeyAlgorithm]: ...
+    @property
+    def permitted_signature_algorithms(
+        self,
+    ) -> frozenset[SignatureAlgorithm]: ...
 
 class Criticality:
     CRITICAL: Criticality
     AGNOSTIC: Criticality
     NON_CRITICAL: Criticality
+
+class PublicKeyAlgorithm:
+    RSA: PublicKeyAlgorithm
+    SECP256R1: PublicKeyAlgorithm
+    SECP384R1: PublicKeyAlgorithm
+    SECP521R1: PublicKeyAlgorithm
+    ED25519: PublicKeyAlgorithm
+    ED448: PublicKeyAlgorithm
+
+class SignatureAlgorithm:
+    RSA_PKCS1V15_SHA256: SignatureAlgorithm
+    RSA_PKCS1V15_SHA384: SignatureAlgorithm
+    RSA_PKCS1V15_SHA512: SignatureAlgorithm
+    RSA_PSS_SHA256: SignatureAlgorithm
+    RSA_PSS_SHA384: SignatureAlgorithm
+    RSA_PSS_SHA512: SignatureAlgorithm
+    ECDSA_SHA256: SignatureAlgorithm
+    ECDSA_SHA384: SignatureAlgorithm
+    ECDSA_SHA512: SignatureAlgorithm
+    ED25519: SignatureAlgorithm
+    ED448: SignatureAlgorithm
 
 T = typing.TypeVar("T", contravariant=True, bound=x509.ExtensionType)
 

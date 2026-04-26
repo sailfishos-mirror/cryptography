@@ -742,6 +742,8 @@ mod tests {
             None,
             None,
             None,
+            None,
+            None,
         )
         .expect("failed to create policy definition");
         let policy = Policy::new(&policy_def, ());
@@ -792,6 +794,8 @@ mod tests {
             None,
             None,
             None,
+            None,
+            None,
         )
         .expect("failed to create policy definition");
         let policy = Policy::new(&policy_def, ());
@@ -834,6 +838,8 @@ mod tests {
             None,
             None,
             None,
+            None,
+            None,
         )
         .expect("failed to create policy definition");
         let policy = Policy::new(&policy_def, ());
@@ -868,6 +874,8 @@ mod tests {
             ops,
             Subject::DNS(DNSName::new("example.com").unwrap()),
             epoch(),
+            None,
+            None,
             None,
             None,
             None,
@@ -908,6 +916,8 @@ mod tests {
             ops,
             Subject::DNS(DNSName::new("example.com").unwrap()),
             epoch(),
+            None,
+            None,
             None,
             None,
             None,

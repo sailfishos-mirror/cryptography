@@ -2,7 +2,11 @@
 // 2.0, and the BSD License. See the LICENSE file in the root of this repository
 // for complete details.
 
+use std::collections::HashSet;
+use std::sync::Arc;
+
 use cryptography_x509::certificate::Certificate;
+use cryptography_x509::common::AlgorithmIdentifier;
 use cryptography_x509::extensions::SubjectAlternativeName;
 use cryptography_x509::oid::SUBJECT_ALTERNATIVE_NAME_OID;
 use cryptography_x509_verification::ops::{CryptoOps, VerificationCertificate};
@@ -11,8 +15,10 @@ use cryptography_x509_verification::trust_store::Store;
 use cryptography_x509_verification::types::{DNSName, IPAddress};
 use pyo3::types::{PyAnyMethods, PyListMethods};
 
+mod algorithm;
 mod extension_policy;
 mod policy;
+pub(crate) use algorithm::{PyPublicKeyAlgorithm, PySignatureAlgorithm};
 pub(crate) use extension_policy::{PyCriticality, PyExtensionPolicy};
 pub(crate) use policy::PyPolicy;
 
@@ -87,6 +93,8 @@ pub(crate) struct PolicyBuilder {
     max_chain_depth: Option<u8>,
     ca_ext_policy: Option<pyo3::Py<PyExtensionPolicy>>,
     ee_ext_policy: Option<pyo3::Py<PyExtensionPolicy>>,
+    permitted_public_key_algorithms: Option<Arc<HashSet<AlgorithmIdentifier<'static>>>>,
+    permitted_signature_algorithms: Option<Arc<HashSet<AlgorithmIdentifier<'static>>>>,
 }
 
 impl PolicyBuilder {
@@ -97,6 +105,8 @@ impl PolicyBuilder {
             max_chain_depth: self.max_chain_depth,
             ca_ext_policy: self.ca_ext_policy.as_ref().map(|p| p.clone_ref(py)),
             ee_ext_policy: self.ee_ext_policy.as_ref().map(|p| p.clone_ref(py)),
+            permitted_public_key_algorithms: self.permitted_public_key_algorithms.clone(),
+            permitted_signature_algorithms: self.permitted_signature_algorithms.clone(),
         }
     }
 }
@@ -111,6 +121,8 @@ impl PolicyBuilder {
             max_chain_depth: None,
             ca_ext_policy: None,
             ee_ext_policy: None,
+            permitted_public_key_algorithms: None,
+            permitted_signature_algorithms: None,
         }
     }
 
@@ -170,6 +182,66 @@ impl PolicyBuilder {
         })
     }
 
+    fn permitted_public_key_algorithms(
+        &self,
+        py: pyo3::Python<'_>,
+        algorithms: HashSet<PyPublicKeyAlgorithm>,
+    ) -> CryptographyResult<PolicyBuilder> {
+        policy_builder_set_once_check!(
+            self,
+            permitted_public_key_algorithms,
+            "permitted public key algorithms"
+        );
+
+        if algorithms.is_empty() {
+            return Err(CryptographyError::from(
+                pyo3::exceptions::PyValueError::new_err(
+                    "permitted_public_key_algorithms must not be empty",
+                ),
+            ));
+        }
+
+        let permitted: HashSet<AlgorithmIdentifier<'static>> = algorithms
+            .into_iter()
+            .map(|a| a.as_algorithm_identifier())
+            .collect();
+
+        Ok(PolicyBuilder {
+            permitted_public_key_algorithms: Some(Arc::new(permitted)),
+            ..self.py_clone(py)
+        })
+    }
+
+    fn permitted_signature_algorithms(
+        &self,
+        py: pyo3::Python<'_>,
+        algorithms: HashSet<PySignatureAlgorithm>,
+    ) -> CryptographyResult<PolicyBuilder> {
+        policy_builder_set_once_check!(
+            self,
+            permitted_signature_algorithms,
+            "permitted signature algorithms"
+        );
+
+        if algorithms.is_empty() {
+            return Err(CryptographyError::from(
+                pyo3::exceptions::PyValueError::new_err(
+                    "permitted_signature_algorithms must not be empty",
+                ),
+            ));
+        }
+
+        let permitted: HashSet<AlgorithmIdentifier<'static>> = algorithms
+            .into_iter()
+            .map(|a| a.as_algorithm_identifier())
+            .collect();
+
+        Ok(PolicyBuilder {
+            permitted_signature_algorithms: Some(Arc::new(permitted)),
+            ..self.py_clone(py)
+        })
+    }
+
     fn build_client_verifier(&self, py: pyo3::Python<'_>) -> CryptographyResult<PyClientVerifier> {
         let store = match self.store.as_ref() {
             Some(s) => s.clone_ref(py),
@@ -198,6 +270,8 @@ impl PolicyBuilder {
                 self.ee_ext_policy
                     .as_ref()
                     .map(|p| p.get().clone_inner_policy()),
+                self.permitted_public_key_algorithms.clone(),
+                self.permitted_signature_algorithms.clone(),
             )
             .map_err(pyo3::exceptions::PyValueError::new_err)
         })?;
@@ -255,6 +329,8 @@ impl PolicyBuilder {
                     self.ee_ext_policy
                         .as_ref()
                         .map(|p| p.get().clone_inner_policy()),
+                    self.permitted_public_key_algorithms.clone(),
+                    self.permitted_signature_algorithms.clone(),
                 )
                 .map_err(pyo3::exceptions::PyValueError::new_err)
             })?;

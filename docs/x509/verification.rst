@@ -282,6 +282,44 @@ the root of trust:
 
         :returns: A new instance of :class:`PolicyBuilder`
 
+    .. method:: permitted_public_key_algorithms(algorithms)
+
+        .. versionadded:: 48.0.0
+
+        Sets the set of public key algorithms (i.e., ``SubjectPublicKeyInfo``
+        ``AlgorithmIdentifier``\ s) that are permitted in any certificate
+        in a chain validated against the resulting verifier.
+
+        If not called, the verifier defaults to the algorithms required by
+        the CA/B Forum Baseline Requirements (section 7.1.3.1): RSA,
+        secp256r1, secp384r1, and secp521r1. Calling this method replaces
+        the default set entirely; supply every algorithm that should be
+        permitted.
+
+        :param algorithms: A non-empty iterable of :class:`PublicKeyAlgorithm`
+            members.
+
+        :returns: A new instance of :class:`PolicyBuilder`
+
+    .. method:: permitted_signature_algorithms(algorithms)
+
+        .. versionadded:: 48.0.0
+
+        Sets the set of signature algorithms that are permitted on any
+        certificate in a chain validated against the resulting verifier.
+
+        If not called, the verifier defaults to the signature algorithms
+        required by the CA/B Forum Baseline Requirements (section 7.1.3.2):
+        the RSASSA-PKCS1-v1_5 and RSASSA-PSS variants with SHA-256, SHA-384
+        and SHA-512, plus ECDSA with SHA-256, SHA-384 and SHA-512. Calling
+        this method replaces the default set entirely; supply every
+        algorithm that should be permitted.
+
+        :param algorithms: A non-empty iterable of :class:`SignatureAlgorithm`
+            members.
+
+        :returns: A new instance of :class:`PolicyBuilder`
+
 
     .. method:: build_server_verifier(subject)
 
@@ -450,6 +488,106 @@ the root of trust:
         The minimum RSA modulus size required by the policy.
 
         :type: int
+
+    .. attribute:: permitted_public_key_algorithms
+
+        .. versionadded:: 48.0.0
+
+        The set of public key (``SubjectPublicKeyInfo``) algorithms that
+        the policy permits in any certificate in a chain.
+
+        :type: frozenset of :class:`PublicKeyAlgorithm`
+
+    .. attribute:: permitted_signature_algorithms
+
+        .. versionadded:: 48.0.0
+
+        The set of signature algorithms that the policy permits on any
+        certificate in a chain.
+
+        :type: frozenset of :class:`SignatureAlgorithm`
+
+.. class:: PublicKeyAlgorithm
+
+    .. versionadded:: 48.0.0
+
+    An enumeration of public key (``SubjectPublicKeyInfo``) algorithms that
+    can be passed to :meth:`PolicyBuilder.permitted_public_key_algorithms`.
+
+    .. attribute:: RSA
+
+        RSA, with no restriction on the modulus or signature padding.
+
+    .. attribute:: SECP256R1
+
+        ECDSA on the secp256r1 (NIST P-256) curve.
+
+    .. attribute:: SECP384R1
+
+        ECDSA on the secp384r1 (NIST P-384) curve.
+
+    .. attribute:: SECP521R1
+
+        ECDSA on the secp521r1 (NIST P-521) curve.
+
+    .. attribute:: ED25519
+
+        Ed25519 (Edwards-curve Digital Signature Algorithm with Curve25519).
+
+    .. attribute:: ED448
+
+        Ed448 (Edwards-curve Digital Signature Algorithm with Curve448).
+
+.. class:: SignatureAlgorithm
+
+    .. versionadded:: 48.0.0
+
+    An enumeration of signature algorithms that can be passed to
+    :meth:`PolicyBuilder.permitted_signature_algorithms`.
+
+    .. attribute:: RSA_PKCS1V15_SHA256
+
+        RSASSA-PKCS1-v1_5 with SHA-256.
+
+    .. attribute:: RSA_PKCS1V15_SHA384
+
+        RSASSA-PKCS1-v1_5 with SHA-384.
+
+    .. attribute:: RSA_PKCS1V15_SHA512
+
+        RSASSA-PKCS1-v1_5 with SHA-512.
+
+    .. attribute:: RSA_PSS_SHA256
+
+        RSASSA-PSS with SHA-256, MGF-1 with SHA-256, and a salt length of 32 bytes.
+
+    .. attribute:: RSA_PSS_SHA384
+
+        RSASSA-PSS with SHA-384, MGF-1 with SHA-384, and a salt length of 48 bytes.
+
+    .. attribute:: RSA_PSS_SHA512
+
+        RSASSA-PSS with SHA-512, MGF-1 with SHA-512, and a salt length of 64 bytes.
+
+    .. attribute:: ECDSA_SHA256
+
+        ECDSA with SHA-256.
+
+    .. attribute:: ECDSA_SHA384
+
+        ECDSA with SHA-384.
+
+    .. attribute:: ECDSA_SHA512
+
+        ECDSA with SHA-512.
+
+    .. attribute:: ED25519
+
+        Ed25519.
+
+    .. attribute:: ED448
+
+        Ed448.
 
 .. type:: MaybeExtensionValidatorCallback
     :canonical: Callable[[Policy, Certificate, Optional[ExtensionType]], None]
