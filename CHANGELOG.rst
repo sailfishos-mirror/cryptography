@@ -12,6 +12,10 @@ Changelog
   We now only publish ``arm64`` wheels for macOS.
 * **BACKWARDS INCOMPATIBLE:** Support for 32-bit Windows has been removed.
   Users should move to a 64-bit Python installation.
+* Added support for signing and verifying X.509 certificates, certificate
+  signing requests, and certificate revocation lists with
+  :doc:`/hazmat/primitives/asymmetric/mldsa` keys, as well as loading
+  certificates that contain ML-DSA public keys.
 
 .. _v48-0-0:
 
