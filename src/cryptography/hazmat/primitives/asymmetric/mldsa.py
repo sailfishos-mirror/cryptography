@@ -502,3 +502,47 @@ class MLDSA87PrivateKey(metaclass=abc.ABCMeta):
 
 if hasattr(rust_openssl, "mldsa"):
     MLDSA87PrivateKey.register(rust_openssl.mldsa.MLDSA87PrivateKey)
+
+
+class MLDSAMuHasher:
+    """Incrementally compute the ML-DSA mu (message representative).
+
+    ``mu`` is the value consumed by the "external mu" signing and verification
+    APIs (:meth:`MLDSA65PrivateKey.sign_mu` and
+    :meth:`MLDSA65PublicKey.verify_mu`). For pure ML-DSA, FIPS 204 defines::
+
+        mu = SHAKE256(SHAKE256(pk, 64) || 0x00 || len(ctx) || ctx || M, 64)
+
+    where ``M`` is the message. Everything up to ``M`` is fixed by the public
+    key and context, so it is absorbed when the hasher is created; the message
+    itself is supplied incrementally through :meth:`update`. This allows
+    computing ``mu`` for a large or streaming message without buffering it.
+    """
+
+    _ctx: rust_openssl.mldsa.MLDSAMuHasher
+
+    def __init__(
+        self,
+        public_key: MLDSA44PublicKey | MLDSA65PublicKey | MLDSA87PublicKey,
+        context: Buffer | None = None,
+    ) -> None:
+        from cryptography.hazmat.backends.openssl.backend import backend
+
+        if not backend.mldsa_supported():
+            raise UnsupportedAlgorithm(
+                "ML-DSA is not supported by this backend.",
+                _Reasons.UNSUPPORTED_PUBLIC_KEY_ALGORITHM,
+            )
+
+        self._ctx = rust_openssl.mldsa.MLDSAMuHasher(public_key, context)
+
+    def update(self, data: Buffer) -> None:
+        self._ctx.update(data)
+
+    def copy(self) -> MLDSAMuHasher:
+        new = MLDSAMuHasher.__new__(MLDSAMuHasher)
+        new._ctx = self._ctx.copy()
+        return new
+
+    def finalize(self) -> bytes:
+        return self._ctx.finalize()

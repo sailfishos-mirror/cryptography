@@ -723,6 +723,142 @@ impl MlDsa87PublicKey {
     }
 }
 
+/// Extract the raw public key bytes from any ML-DSA public key object. Private
+/// keys (and other key types) are rejected: mu computation is a public-key
+/// operation.
+fn mldsa_public_key_raw(public_key: &pyo3::Bound<'_, pyo3::PyAny>) -> CryptographyResult<Vec<u8>> {
+    if let Ok(k) = public_key.cast::<MlDsa44PublicKey>() {
+        Ok(k.get().pkey.raw_public_key()?)
+    } else if let Ok(k) = public_key.cast::<MlDsa65PublicKey>() {
+        Ok(k.get().pkey.raw_public_key()?)
+    } else if let Ok(k) = public_key.cast::<MlDsa87PublicKey>() {
+        Ok(k.get().pkey.raw_public_key()?)
+    } else {
+        Err(CryptographyError::from(
+            pyo3::exceptions::PyTypeError::new_err("public_key must be an ML-DSA public key."),
+        ))
+    }
+}
+
+/// Build a SHAKE256 hasher pre-loaded with the fixed part of the pure-ML-DSA
+/// mu input: `SHAKE256(pk, 64) || 0x00 || len(ctx) || ctx`. The message is
+/// absorbed later by [`MlDsaMuHasher::update`]. SHAKE256 is unavailable through
+/// the EVP interface on BoringSSL/LibreSSL, so this is only compiled elsewhere.
+#[cfg(not(any(CRYPTOGRAPHY_IS_LIBRESSL, CRYPTOGRAPHY_IS_BORINGSSL)))]
+fn mu_hasher_init(raw_pk: &[u8], context: &[u8]) -> CryptographyResult<openssl::hash::Hasher> {
+    let md = openssl::hash::MessageDigest::from_name("shake256").ok_or_else(|| {
+        CryptographyError::from(exceptions::UnsupportedAlgorithm::new_err((
+            "SHAKE256 is not supported on this backend.",
+            exceptions::Reasons::UNSUPPORTED_HASH,
+        )))
+    })?;
+    // tr = SHAKE256(pk, 64)
+    let mut tr = [0u8; cryptography_openssl::mldsa::MLDSA_MU_BYTES];
+    openssl::hash::hash_xof(md, raw_pk, &mut tr)?;
+    let mut ctx = openssl::hash::Hasher::new(md)?;
+    ctx.update(&tr)?;
+    // Pure-ML-DSA M' prefix: domain separator 0x00, then the context.
+    ctx.update(&[0x00])?;
+    ctx.update(&[context.len() as u8])?;
+    ctx.update(context)?;
+    Ok(ctx)
+}
+
+#[pyo3::pyclass(
+    module = "cryptography.hazmat.bindings._rust.openssl.mldsa",
+    name = "MLDSAMuHasher"
+)]
+pub(crate) struct MlDsaMuHasher {
+    ctx: Option<openssl::hash::Hasher>,
+}
+
+impl MlDsaMuHasher {
+    fn get_mut_ctx(&mut self) -> CryptographyResult<&mut openssl::hash::Hasher> {
+        if let Some(ctx) = self.ctx.as_mut() {
+            return Ok(ctx);
+        }
+        Err(exceptions::already_finalized_error())
+    }
+
+    fn get_ctx(&self) -> CryptographyResult<&openssl::hash::Hasher> {
+        if let Some(ctx) = self.ctx.as_ref() {
+            return Ok(ctx);
+        }
+        Err(exceptions::already_finalized_error())
+    }
+}
+
+#[pyo3::pymethods]
+impl MlDsaMuHasher {
+    #[new]
+    #[pyo3(signature = (public_key, context=None))]
+    fn new(
+        public_key: &pyo3::Bound<'_, pyo3::PyAny>,
+        context: Option<CffiBuf<'_>>,
+    ) -> CryptographyResult<MlDsaMuHasher> {
+        let ctx_bytes = context.as_ref().map_or(&[][..], |c| c.as_bytes());
+        if ctx_bytes.len() > MAX_CONTEXT_BYTES {
+            return Err(CryptographyError::from(
+                pyo3::exceptions::PyValueError::new_err("Context must be at most 255 bytes"),
+            ));
+        }
+        let raw_pk = mldsa_public_key_raw(public_key)?;
+        cfg_if::cfg_if! {
+            if #[cfg(not(any(CRYPTOGRAPHY_IS_LIBRESSL, CRYPTOGRAPHY_IS_BORINGSSL)))] {
+                Ok(MlDsaMuHasher {
+                    ctx: Some(mu_hasher_init(&raw_pk, ctx_bytes)?),
+                })
+            } else {
+                let _ = raw_pk;
+                Err(CryptographyError::from(
+                    exceptions::UnsupportedAlgorithm::new_err((
+                        "ML-DSA external mu computation is not supported on \
+                         this backend.",
+                        exceptions::Reasons::UNSUPPORTED_HASH,
+                    )),
+                ))
+            }
+        }
+    }
+
+    fn update(&mut self, data: CffiBuf<'_>) -> CryptographyResult<()> {
+        self.get_mut_ctx()?.update(data.as_bytes())?;
+        Ok(())
+    }
+
+    fn copy(&self) -> CryptographyResult<MlDsaMuHasher> {
+        Ok(MlDsaMuHasher {
+            ctx: Some(self.get_ctx()?.clone()),
+        })
+    }
+
+    fn finalize<'p>(
+        &mut self,
+        py: pyo3::Python<'p>,
+    ) -> CryptographyResult<pyo3::Bound<'p, pyo3::types::PyBytes>> {
+        cfg_if::cfg_if! {
+            if #[cfg(not(any(CRYPTOGRAPHY_IS_LIBRESSL, CRYPTOGRAPHY_IS_BORINGSSL)))] {
+                let ctx = self.get_mut_ctx()?;
+                let result = pyo3::types::PyBytes::new_with(
+                    py,
+                    cryptography_openssl::mldsa::MLDSA_MU_BYTES,
+                    |b| {
+                        ctx.finish_xof(b).unwrap();
+                        Ok(())
+                    },
+                )?;
+                self.ctx = None;
+                Ok(result)
+            } else {
+                // Unreachable: construction always fails on these backends, so
+                // no ctx can exist, but the method must still compile.
+                let _ = py;
+                Err(exceptions::already_finalized_error())
+            }
+        }
+    }
+}
+
 #[pyo3::pymodule(gil_used = false)]
 pub(crate) mod mldsa {
     #[pymodule_export]
@@ -731,5 +867,34 @@ pub(crate) mod mldsa {
         from_mldsa65_seed_bytes, from_mldsa87_public_bytes, from_mldsa87_seed_bytes,
         generate_mldsa44_key, generate_mldsa65_key, generate_mldsa87_key, MlDsa44PrivateKey,
         MlDsa44PublicKey, MlDsa65PrivateKey, MlDsa65PublicKey, MlDsa87PrivateKey, MlDsa87PublicKey,
+        MlDsaMuHasher,
     };
+}
+
+#[cfg(test)]
+mod tests {
+    // Validates the pure-ML-DSA mu computation (FIPS 204) against a reference
+    // value computed independently with Python's hashlib:
+    //   tr = SHAKE256(b"\x01\x02\x03", 64)
+    //   mu = SHAKE256(tr || 0x00 || 0x03 || b"ctx" || b"hello", 64)
+    #[cfg(not(any(CRYPTOGRAPHY_IS_LIBRESSL, CRYPTOGRAPHY_IS_BORINGSSL)))]
+    #[test]
+    fn test_mu_hasher_init_matches_reference() {
+        let mut ctx = match super::mu_hasher_init(&[1, 2, 3], b"ctx") {
+            Ok(ctx) => ctx,
+            Err(_) => panic!("mu_hasher_init failed"),
+        };
+        ctx.update(b"hel").unwrap();
+        ctx.update(b"lo").unwrap();
+        let mut mu = [0u8; cryptography_openssl::mldsa::MLDSA_MU_BYTES];
+        ctx.finish_xof(&mut mu).unwrap();
+        let expected: [u8; 64] = [
+            0x4e, 0x9c, 0x86, 0x82, 0xa5, 0x51, 0xbe, 0xf8, 0xff, 0xa3, 0x3f, 0x23, 0xed, 0x5b,
+            0xab, 0x12, 0xa4, 0x5b, 0x6c, 0xdc, 0x88, 0x62, 0xba, 0x56, 0xce, 0xe9, 0x26, 0xe4,
+            0xf3, 0x00, 0x62, 0x14, 0x58, 0xd5, 0x49, 0xaf, 0x80, 0x3b, 0xa0, 0x69, 0x38, 0x40,
+            0x16, 0xf7, 0x36, 0x79, 0xdc, 0x96, 0x9d, 0x8a, 0x7b, 0x1e, 0x34, 0x4d, 0x22, 0x90,
+            0xdd, 0xff, 0x86, 0xb7, 0xac, 0x5b, 0x89, 0xaf,
+        ];
+        assert_eq!(mu, expected);
+    }
 }

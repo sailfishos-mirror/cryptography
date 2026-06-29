@@ -13,6 +13,10 @@ Changelog
   silently ignoring them.
 * Added support for using :class:`~cryptography.x509.Name` as a field type in
   the :doc:`/hazmat/asn1/index` module.
+* Added
+  :class:`~cryptography.hazmat.primitives.asymmetric.mldsa.MLDSAMuHasher` for
+  incrementally computing the ML-DSA ``mu`` (message representative) used by
+  the external-mu signing and verification APIs.
 
 .. _v49-0-0:
 
