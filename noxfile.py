@@ -54,6 +54,33 @@ def load_pyproject_toml() -> dict:
         return tomllib.load(f)
 
 
+def run_ty(session: nox.Session) -> None:
+    # ty binds away the first parameter of a `__call__` typed through a
+    # Callable-bounded TypeVar (https://github.com/astral-sh/ty/issues/3981),
+    # which is how pytest 8's `_WithException` protocol declares it, so it
+    # rejects every `pytest.skip("...")` in the test suite
+    # (https://github.com/astral-sh/ty/issues/2797). pytest 9 dropped that
+    # pattern but requires Python 3.10+, so skip ty on 3.9.
+    if sys.version_info < (3, 10):
+        session.log("Skipping ty: needs pytest >= 9, which needs Python 3.10+")
+        return
+
+    session.run(
+        "ty",
+        "check",
+        # ty takes its target version from `project.requires-python` (3.9)
+        # rather than the interpreter it runs on. Pin it so ty and mypy agree
+        # on which `sys.version_info` branches are reachable. No session pins a
+        # python, so this is the version the session venv uses.
+        f"--python-version={sys.version_info[0]}.{sys.version_info[1]}",
+        "src/cryptography/",
+        "vectors/cryptography_vectors/",
+        "tests/",
+        "release.py",
+        "noxfile.py",
+    )
+
+
 @nox.session
 @nox.session(name="tests-ssh")
 @nox.session(name="tests-randomorder")
@@ -232,6 +259,7 @@ def flake(session: nox.Session) -> None:
         "release.py",
         "noxfile.py",
     )
+    run_ty(session)
     session.run("check-sdist", "--no-isolation")
 
 
@@ -331,6 +359,8 @@ def local(session: nox.Session):
         "release.py",
         "noxfile.py",
     )
+
+    run_ty(session)
 
     session.run(
         "maturin",
