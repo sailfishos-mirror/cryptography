@@ -3,7 +3,7 @@
 // for complete details.
 
 use cryptography_x509::common::{
-    AlgorithmIdentifier, AlgorithmParameters, PbeParams, Pkcs12PbeParams,
+    AlgorithmIdentifier, AlgorithmParameters, PbeParams, Pkcs12PbeParams, SubjectPublicKeyInfo,
 };
 use cryptography_x509::csr::Attributes;
 use cryptography_x509::pkcs8::EncryptedPrivateKeyInfo;
@@ -12,7 +12,8 @@ use cryptography_x509::pkcs8::EncryptedPrivateKeyInfo;
 use crate::MIN_DH_MODULUS_SIZE;
 use crate::{ec, pbe, rsa, KeyParsingError, KeyParsingResult, ParsedPrivateKey};
 
-// RFC 5208 Section 5
+// RFC 5208 Section 5 (PrivateKeyInfo), extended by RFC 5958 Section 2
+// (OneAsymmetricKey), which adds version v2 and an optional public key.
 #[derive(asn1::Asn1Read, asn1::Asn1Write)]
 pub struct PrivateKeyInfo<'a> {
     pub version: u8,
@@ -20,7 +21,12 @@ pub struct PrivateKeyInfo<'a> {
     pub private_key: &'a [u8],
     #[implicit(0)]
     pub attributes: Option<Attributes<'a>>,
+    #[implicit(1)]
+    pub public_key: Option<asn1::BitString<'a>>,
 }
+
+const PKCS8_VERSION_V1: u8 = 0;
+const PKCS8_VERSION_V2: u8 = 1;
 
 // RFC 9935 Section 6
 #[cfg(any(
@@ -48,15 +54,42 @@ pub enum MlDsaPrivateKey {
 
 pub fn parse_private_key(data: &[u8]) -> KeyParsingResult<ParsedPrivateKey> {
     let k = asn1::parse_single::<PrivateKeyInfo<'_>>(data)?;
-    if k.version != 0 {
-        return Err(crate::KeyParsingError::InvalidKey);
+    // RFC 5958 Section 2: v1 is used for keys with no public key, v2 is used
+    // when a public key is present (but the public key remains optional).
+    match (k.version, &k.public_key) {
+        (PKCS8_VERSION_V1, None) | (PKCS8_VERSION_V2, _) => {}
+        _ => return Err(crate::KeyParsingError::InvalidKey),
     }
-    match k.algorithm.params {
+    let key = parse_private_key_inner(&k)?;
+    if let Some(public_key) = k.public_key {
+        // The key is always constructed from the private key. If a public
+        // key is also present, verify that it matches the one derived from
+        // the private key, so that an inconsistent key is rejected rather
+        // than silently loaded with a different public key.
+        let ParsedPrivateKey::Pkey(pkey) = &key;
+        let spki_der = crate::spki::serialize_public_key(pkey).map_err(|e| match e {
+            crate::KeySerializationError::OpenSSL(e) => KeyParsingError::OpenSSL(e),
+            crate::KeySerializationError::Write(_)
+            | crate::KeySerializationError::PasswordMustBeUtf8 => KeyParsingError::InvalidKey,
+        })?;
+        let spki = asn1::parse_single::<SubjectPublicKeyInfo<'_>>(&spki_der)?;
+        if public_key.padding_bits() != 0
+            || public_key.as_bytes() != spki.subject_public_key.as_bytes()
+        {
+            return Err(KeyParsingError::InvalidKey);
+        }
+    }
+    Ok(key)
+}
+
+fn parse_private_key_inner(k: &PrivateKeyInfo<'_>) -> KeyParsingResult<ParsedPrivateKey> {
+    match &k.algorithm.params {
         AlgorithmParameters::Rsa(_) | AlgorithmParameters::RsaPss(_) => {
             rsa::parse_pkcs1_private_key(k.private_key).map(ParsedPrivateKey::Pkey)
         }
         AlgorithmParameters::Ec(ec_params) => {
-            ec::parse_pkcs1_private_key(k.private_key, Some(ec_params)).map(ParsedPrivateKey::Pkey)
+            ec::parse_pkcs1_private_key(k.private_key, Some(ec_params.clone()))
+                .map(ParsedPrivateKey::Pkey)
         }
 
         AlgorithmParameters::Dsa(dsa_params) => {
@@ -590,13 +623,14 @@ pub fn serialize_private_key(key: &ParsedPrivateKey) -> crate::KeySerializationR
     };
 
     let pki = PrivateKeyInfo {
-        version: 0,
+        version: PKCS8_VERSION_V1,
         algorithm: AlgorithmIdentifier {
             oid: asn1::DefinedByMarker::marker(),
             params,
         },
         private_key: &private_key_der,
         attributes: None,
+        public_key: None,
     };
     Ok(asn1::write_single(&pki)?)
 }
